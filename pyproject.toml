@@ -1,0 +1,15 @@
+[project]
+name = "memcomp-bench"
+version = "0.1.0"
+description = "Memory Compression Benchmark — measuring personality preservation through context compression"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "tiktoken>=0.7",
+]
+
+[project.scripts]
+memcomp = "src.cli:main"

@@ -655,12 +655,14 @@ class ConversationGenerator:
         seed_words = metadata.get("seed_words", [])
         conversation_plan = metadata.get("conversation_plan", "")
         language = language_override or metadata.get("language", "english")
+        previous_cost = metadata.get("total_cost_usd", 0.0)
 
         console.print(f"\n[bold]Resuming conversation with {profile['name']}[/bold]")
         console.print(f"  From: {jsonl_path.name}")
         console.print(f"  Existing turns: {len(turns)}")
         console.print(f"  AI model: {ai_model}")
         console.print(f"  Human model: {human_model}")
+        console.print(f"  Previous cost: ${previous_cost:.4f}")
         console.print(f"  New target: ~{target_tokens:,} tokens")
         console.print(f"  Seed: {', '.join(seed_words)}")
 
@@ -693,6 +695,9 @@ class ConversationGenerator:
             language=language,
             verbose=verbose,
         )
+
+        # Restore cost from previous runs
+        client.total_cost = previous_cost
 
         # Restore internal state
         gen._seed_words = seed_words

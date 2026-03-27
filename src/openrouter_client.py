@@ -65,18 +65,33 @@ class OpenRouterClient:
         }
 
         max_retries = 5
+        retryable_codes = {429, 500, 502, 503, 504}
+        last_error = None
+
         for attempt in range(max_retries):
             start = time.monotonic()
-            resp = self._client.post(
-                f"{OPENROUTER_BASE_URL}/chat/completions",
-                json=payload,
-                headers=headers,
-            )
+            try:
+                resp = self._client.post(
+                    f"{OPENROUTER_BASE_URL}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+            except httpx.RequestError as e:
+                if attempt < max_retries - 1:
+                    wait = min(2 ** attempt * 3, 30)
+                    print(f"[retry] Network error: {e}, retrying in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(f"Network error after {max_retries} retries: {e}")
+
             elapsed = time.monotonic() - start
 
-            if resp.status_code == 429 and attempt < max_retries - 1:
-                wait = 2 ** attempt * 3
+            if resp.status_code in retryable_codes and attempt < max_retries - 1:
+                wait = min(2 ** attempt * 3, 30)
+                error_body = resp.text[:200]
+                print(f"[retry] API error {resp.status_code}: {error_body}, retrying in {wait}s...")
                 time.sleep(wait)
+                last_error = f"OpenRouter API error {resp.status_code}: {error_body}"
                 continue
 
             if resp.status_code != 200:
@@ -85,6 +100,8 @@ class OpenRouterClient:
                     f"OpenRouter API error {resp.status_code}: {error_body}"
                 )
             break
+        else:
+            raise RuntimeError(last_error or "Max retries exceeded")
 
         data = resp.json()
         choice = data.get("choices", [{}])[0]

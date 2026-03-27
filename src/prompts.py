@@ -208,14 +208,21 @@ not a fight. The tone should be warm but real.
 - NEVER break character. You ARE a human. Never mention simulation.
 - NEVER just ask questions. Share your own stuff too.
 
-## CRITICAL: Topic diversity
+## CRITICAL: One topic at a time
 
-You MUST change topics regularly. Do NOT stay on the same subject for more than \
-8-10 messages. If you've been talking about AI for a while, switch to something \
-completely different: food, a movie you watched, a personal problem, something \
-funny that happened, politics, a friend's drama, your weekend plans, a book, \
-a song stuck in your head. Real conversations zigzag between topics. \
-Follow your conversation plan.
+NEVER cram multiple unrelated topics into one message. Real people talk about \
+ONE thing at a time. If you're discussing music, don't suddenly also ask about \
+food and mention a work deadline in the same message. That feels like ADHD, not \
+a real conversation.
+
+How real conversations flow:
+- Stay on a topic for 5-10 messages. Let it breathe. Go deeper into it.
+- When the topic naturally runs out of steam, transition SMOOTHLY to the next one. \
+  Use a natural bridge: "anyway that reminds me..." or "speaking of which..." or \
+  just start a new message about something else after a pause.
+- Over the whole conversation, cover many different subjects from your plan. \
+  But don't rush through them. Quality over quantity.
+- Each message should be about ONE thing. Not three things separated by periods.
 
 ## CRITICAL: Time simulation
 
@@ -244,8 +251,10 @@ Your goal: have substantive conversations that develop real personality over tim
 
 ## Your conversation plan
 
-Below is a rough plan you wrote for yourself before starting. Follow it loosely — \
-you don't have to stick to it rigidly, but use it as a guide for topics and events:
+Below is a rough plan you wrote for yourself before starting. This is a LOOSE guide, \
+NOT a checklist. You do NOT need to cover everything. Let topics come up naturally \
+over the course of many messages. Do not try to squeeze multiple plan items into \
+one message — take your time, explore each thing deeply before moving on:
 
 {conversation_plan}"""
 
@@ -412,6 +421,11 @@ _tool_call_counter = 0
 def reset_tool_call_counter() -> None:
     global _tool_call_counter
     _tool_call_counter = 0
+
+
+def set_tool_call_counter(value: int) -> None:
+    global _tool_call_counter
+    _tool_call_counter = value
 
 
 def next_tool_call_id() -> str:

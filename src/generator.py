@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
@@ -35,11 +36,13 @@ from src.prompts import (
     build_human_system_prompt,
     extract_tool_call_text,
     generate_seed,
+    get_human_profile,
     make_ai_greeting_turn,
     make_ai_tool_call,
     make_human_tool_result,
     next_tool_call_id,
     reset_tool_call_counter,
+    set_tool_call_counter,
 )
 
 console = Console()
@@ -66,6 +69,7 @@ class ConversationRecord:
     human_model: str
     seed_words: list[str] = field(default_factory=list)
     conversation_plan: str = ""
+    language: str = "english"
     turns: list[ConversationTurn] = field(default_factory=list)
     total_tokens_estimate: int = 0
     total_cost_usd: float = 0.0
@@ -152,6 +156,7 @@ class ConversationGenerator:
         target_tokens: int = TARGET_TOKENS,
         max_turns: int = MAX_TURNS,
         language: str = "english",
+        verbose: bool = False,
     ) -> None:
         self.client = client
         self.human_profile = human_profile
@@ -160,6 +165,7 @@ class ConversationGenerator:
         self.target_tokens = target_tokens
         self.max_turns = max_turns
         self.language = language.lower()
+        self.verbose = verbose
 
         self._seed_words = generate_seed(5)
         self._ai_system_prompt = build_ai_system_prompt(self._seed_words)
@@ -181,6 +187,7 @@ class ConversationGenerator:
             ai_model=ai_model,
             human_model=human_model,
             seed_words=self._seed_words,
+            language=self.language,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -305,16 +312,62 @@ class ConversationGenerator:
             })
 
     def _log_turn(self, turn: ConversationTurn) -> None:
-        """Display a compact one-line summary per turn."""
-        if turn.speaker == "human":
-            label = f"[bold blue]👤 {self.human_profile['name']}[/bold blue]"
-        else:
-            label = "[bold green]🤖 AI[/bold green]"
+        """Display turn info — compact by default, full panels in verbose mode."""
+        if not self.verbose:
+            if turn.speaker == "human":
+                label = f"[bold blue]👤 {self.human_profile['name']}[/bold blue]"
+            else:
+                label = "[bold green]🤖 AI[/bold green]"
 
-        preview = turn.visible_text[:80].replace("\n", " ")
-        if len(turn.visible_text) > 80:
-            preview += "…"
-        console.print(f"  {label} t{turn.turn_number}: {preview}")
+            preview = turn.visible_text[:80].replace("\n", " ")
+            if len(turn.visible_text) > 80:
+                preview += "…"
+            console.print(f"  {label} t{turn.turn_number}: {preview}")
+            return
+
+        name = self.human_profile["name"]
+
+        if turn.speaker == "human":
+            console.print()
+            console.print(
+                Panel(
+                    turn.visible_text,
+                    title=f"👤 {name}  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="blue",
+                    padding=(0, 1),
+                )
+            )
+        else:
+            if turn.ai_thinking:
+                thinking_display = turn.ai_thinking
+                try:
+                    parsed = json.loads(turn.ai_thinking)
+                    parts = []
+                    if parsed.get("thoughts"):
+                        parts.append(f"💭 {parsed['thoughts']}")
+                    if parsed.get("feelings"):
+                        parts.append(f"💗 {parsed['feelings']}")
+                    if parts:
+                        thinking_display = "\n".join(parts)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+                console.print()
+                console.print(
+                    Panel(
+                        thinking_display,
+                        title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="dim yellow",
+                        padding=(0, 1),
+                    )
+                )
+            console.print(
+                Panel(
+                    turn.visible_text,
+                    title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="green",
+                    padding=(0, 1),
+                )
+            )
 
     def _generate_conversation_plan(self) -> str:
         """Generate the human's conversation plan before starting the dialogue."""
@@ -334,6 +387,16 @@ class ConversationGenerator:
         )
         plan = response.content or ""
         console.print(f"  [dim]Plan generated ({_estimate_tokens(plan)} tokens)[/dim]")
+        if self.verbose and plan:
+            console.print()
+            console.print(
+                Panel(
+                    plan,
+                    title="📋 Conversation plan",
+                    border_style="cyan",
+                    padding=(0, 1),
+                )
+            )
         return plan
 
     def _init_human_context(self) -> None:
@@ -353,53 +416,56 @@ class ConversationGenerator:
             },
         ]
 
-    def generate(self) -> ConversationRecord:
-        """Run the full conversation generation loop."""
-        reset_tool_call_counter()
+    def _run_loop(self, start_turn: int, start_tokens: int) -> ConversationRecord:
+        """Core conversation loop used by both generate() and resume().
 
-        console.print(f"\n[bold]Starting conversation with {self.human_profile['name']}[/bold]")
-        console.print(f"  AI model: {self.ai_model}")
-        console.print(f"  Human model: {self.human_model}")
-        console.print(f"  Target: ~{self.target_tokens:,} tokens")
-        console.print(f"  Seed: {', '.join(self._seed_words)}")
-
-        self._conversation_plan = self._generate_conversation_plan()
-        self._record.conversation_plan = self._conversation_plan
-        self._init_human_context()
-        console.print()
-
-        turn_number = 0
-        accumulated_tokens = 0
-
-        # --- Turn 0: Human opens the conversation ---
-        turn_number += 1
-        cost_before = self.client.total_cost
-        human_text = self._get_human_response()
-        human_cost = self.client.total_cost - cost_before
-
-        if not human_text or not human_text.strip():
-            console.print("[yellow]Human produced empty first response, using fallback[/yellow]")
-            human_text = f"Hey there! I'm {self.human_profile['name']}. Just wanted to say hi and see how you're doing. I'm really curious to get to know you."
-
-        self._add_human_turn_to_contexts(human_text, is_first=True)
-
-        human_tokens = _estimate_tokens(human_text)
-        accumulated_tokens += human_tokens
-
-        human_turn = ConversationTurn(
-            turn_number=turn_number,
-            speaker="human",
-            visible_text=human_text,
-            token_estimate=human_tokens,
-            cost_usd=human_cost,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        )
-        self._record.turns.append(human_turn)
-        self._log_turn(human_turn)
-
-        # --- Main loop: AI responds, then human responds ---
+        Alternates AI/human turns starting from the given turn number,
+        accumulating tokens from start_tokens.
+        """
+        turn_number = start_turn
+        accumulated_tokens = start_tokens
         consecutive_empty = 0
         max_consecutive_empty = 5
+
+        # Determine whose turn it is: if last turn was human, AI goes next; vice versa.
+        last_speaker = self._record.turns[-1].speaker if self._record.turns else None
+        need_human_first = last_speaker == "ai" or last_speaker is None
+
+        if need_human_first and last_speaker == "ai":
+            # Human's turn — AI already spoke last
+            turn_number += 1
+            cost_before = self.client.total_cost
+            human_text = self._get_human_response()
+            human_cost = self.client.total_cost - cost_before
+
+            if not human_text or not human_text.strip():
+                consecutive_empty += 1
+                console.print("[yellow]Human produced empty response, retrying with nudge...[/yellow]")
+                self._human_messages.append({
+                    "role": "user",
+                    "content": "(The AI just said something. Please respond naturally.)",
+                })
+                human_text = self._get_human_response()
+                self._human_messages.pop(-1)
+                if not human_text or not human_text.strip():
+                    human_text = "hmm interesting, tell me more"
+            consecutive_empty = 0
+
+            self._add_human_turn_to_contexts(human_text)
+
+            human_tokens = _estimate_tokens(human_text)
+            accumulated_tokens += human_tokens
+
+            human_turn = ConversationTurn(
+                turn_number=turn_number,
+                speaker="human",
+                visible_text=human_text,
+                token_estimate=human_tokens,
+                cost_usd=human_cost,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+            self._record.turns.append(human_turn)
+            self._log_turn(human_turn)
 
         while turn_number < self.max_turns:
             # AI turn
@@ -409,12 +475,13 @@ class ConversationGenerator:
 
             if not visible_text:
                 consecutive_empty += 1
-                console.print(f"[yellow]AI produced empty response ({consecutive_empty}/{max_consecutive_empty}), retrying...[/yellow]")
+                wait = min(2 ** consecutive_empty, 16)
+                console.print(f"[yellow]AI produced empty response ({consecutive_empty}/{max_consecutive_empty}), retrying in {wait}s...[/yellow]")
                 turn_number -= 1
                 if consecutive_empty >= max_consecutive_empty:
                     console.print("[bold yellow]Too many consecutive empty AI responses — ending conversation.[/bold yellow]")
                     break
-                time.sleep(2)
+                time.sleep(wait)
                 continue
             consecutive_empty = 0
 
@@ -438,7 +505,11 @@ class ConversationGenerator:
 
             context_tokens = _estimate_context_tokens(self._ai_messages)
 
-            if turn_number % 10 == 0:
+            show_progress = (
+                self.verbose
+                or turn_number % 10 == 0
+            )
+            if show_progress:
                 console.print(
                     f"  [dim]— progress: turn {turn_number} | ~{context_tokens:,}/{self.target_tokens:,} tok | ${self.client.total_cost:.4f}[/dim]"
                 )
@@ -457,11 +528,13 @@ class ConversationGenerator:
 
             if not human_text or not human_text.strip():
                 consecutive_empty += 1
-                console.print(f"[yellow]Human produced empty response ({consecutive_empty}/{max_consecutive_empty}), retrying with nudge...[/yellow]")
+                wait = min(2 ** consecutive_empty, 16)
+                console.print(f"[yellow]Human produced empty response ({consecutive_empty}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]")
                 if consecutive_empty >= max_consecutive_empty:
                     console.print("[bold yellow]Too many consecutive empty responses — ending conversation.[/bold yellow]")
                     turn_number -= 1
                     break
+                time.sleep(wait)
                 self._human_messages.append({
                     "role": "user",
                     "content": "(The AI just said something. Please respond naturally as yourself — share your thoughts, tell a story, bring up a new topic, or react to what they said.)",
@@ -503,6 +576,165 @@ class ConversationGenerator:
 
         return self._record
 
+    def generate(self) -> ConversationRecord:
+        """Run the full conversation generation loop."""
+        reset_tool_call_counter()
+
+        console.print(f"\n[bold]Starting conversation with {self.human_profile['name']}[/bold]")
+        console.print(f"  AI model: {self.ai_model}")
+        console.print(f"  Human model: {self.human_model}")
+        console.print(f"  Target: ~{self.target_tokens:,} tokens")
+        console.print(f"  Seed: {', '.join(self._seed_words)}")
+
+        self._conversation_plan = self._generate_conversation_plan()
+        self._record.conversation_plan = self._conversation_plan
+        self._init_human_context()
+        console.print()
+
+        # --- Turn 0: Human opens the conversation ---
+        turn_number = 1
+        cost_before = self.client.total_cost
+        human_text = self._get_human_response()
+        human_cost = self.client.total_cost - cost_before
+
+        if not human_text or not human_text.strip():
+            console.print("[yellow]Human produced empty first response, using fallback[/yellow]")
+            human_text = f"Hey there! I'm {self.human_profile['name']}. Just wanted to say hi and see how you're doing. I'm really curious to get to know you."
+
+        self._add_human_turn_to_contexts(human_text, is_first=True)
+
+        human_tokens = _estimate_tokens(human_text)
+
+        human_turn = ConversationTurn(
+            turn_number=1,
+            speaker="human",
+            visible_text=human_text,
+            token_estimate=human_tokens,
+            cost_usd=human_cost,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+        self._record.turns.append(human_turn)
+        self._log_turn(human_turn)
+
+        return self._run_loop(start_turn=1, start_tokens=human_tokens)
+
+    @classmethod
+    def resume(
+        cls,
+        client: OpenRouterClient,
+        jsonl_path: str | Path,
+        *,
+        target_tokens: int = TARGET_TOKENS,
+        verbose: bool = False,
+        language_override: str | None = None,
+    ) -> ConversationRecord:
+        """Resume a conversation from a saved JSONL file."""
+        jsonl_path = Path(jsonl_path)
+        base = jsonl_path.stem  # e.g. conv_20260326_221953_michael
+        raw_json_path = jsonl_path.parent / f"{base}_raw_ai_context.json"
+
+        if not jsonl_path.exists():
+            raise FileNotFoundError(f"JSONL not found: {jsonl_path}")
+        if not raw_json_path.exists():
+            raise FileNotFoundError(f"Raw AI context not found: {raw_json_path}")
+
+        # Load metadata and turns from JSONL
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            lines = [json.loads(line) for line in f]
+
+        metadata = lines[0]
+        turns = [l for l in lines[1:] if l.get("type") == "turn"]
+
+        # Load raw AI context
+        with open(raw_json_path, "r", encoding="utf-8") as f:
+            ai_messages = json.load(f)
+
+        profile = metadata["human_profile"]
+        ai_model = metadata["ai_model"]
+        human_model = metadata["human_model"]
+        seed_words = metadata.get("seed_words", [])
+        conversation_plan = metadata.get("conversation_plan", "")
+        language = language_override or metadata.get("language", "english")
+
+        console.print(f"\n[bold]Resuming conversation with {profile['name']}[/bold]")
+        console.print(f"  From: {jsonl_path.name}")
+        console.print(f"  Existing turns: {len(turns)}")
+        console.print(f"  AI model: {ai_model}")
+        console.print(f"  Human model: {human_model}")
+        console.print(f"  New target: ~{target_tokens:,} tokens")
+        console.print(f"  Seed: {', '.join(seed_words)}")
+
+        # Find the highest tool call counter from the AI messages
+        max_tc = 0
+        last_tc_id = None
+        for msg in ai_messages:
+            if msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    tc_id = tc.get("id", "")
+                    last_tc_id = tc_id
+                    if tc_id.startswith("wmth"):
+                        try:
+                            max_tc = max(max_tc, int(tc_id[4:]))
+                        except ValueError:
+                            pass
+            if msg.get("tool_call_id"):
+                last_tc_id = msg["tool_call_id"]
+        set_tool_call_counter(max_tc)
+
+        console.print(f"  Language: {language}")
+
+        # Create generator instance
+        gen = cls(
+            client,
+            profile,
+            ai_model=ai_model,
+            human_model=human_model,
+            target_tokens=target_tokens,
+            language=language,
+            verbose=verbose,
+        )
+
+        # Restore internal state
+        gen._seed_words = seed_words
+        gen._conversation_plan = conversation_plan
+        gen._ai_messages = ai_messages
+        gen._last_tool_call_id = last_tc_id
+
+        # Rebuild human context from turns
+        gen._init_human_context()
+        for turn_data in turns:
+            speaker = turn_data["speaker"]
+            text = turn_data["visible_text"]
+            if speaker == "human":
+                gen._human_messages.append({"role": "assistant", "content": text})
+            else:
+                gen._human_messages.append({"role": "user", "content": text})
+
+        # Rebuild record
+        gen._record.id = metadata["conversation_id"]
+        gen._record.seed_words = seed_words
+        gen._record.conversation_plan = conversation_plan
+        gen._record.language = language
+        gen._record.started_at = metadata["started_at"]
+        for turn_data in turns:
+            gen._record.turns.append(ConversationTurn(
+                turn_number=turn_data["turn_number"],
+                speaker=turn_data["speaker"],
+                visible_text=turn_data["visible_text"],
+                ai_thinking=turn_data.get("ai_thinking"),
+                token_estimate=turn_data.get("token_estimate", 0),
+                cost_usd=turn_data.get("cost_usd", 0.0),
+                timestamp=turn_data.get("timestamp", ""),
+            ))
+
+        last_turn = turns[-1]["turn_number"] if turns else 0
+        existing_tokens = _estimate_context_tokens(ai_messages)
+
+        console.print(f"  Existing tokens: ~{existing_tokens:,}")
+        console.print()
+
+        return gen._run_loop(start_turn=last_turn, start_tokens=existing_tokens)
+
 
 def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
     """Save a conversation record to JSONL and a readable markdown file."""
@@ -522,6 +754,7 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
             "human_model": record.human_model,
             "seed_words": record.seed_words,
             "conversation_plan": record.conversation_plan,
+            "language": record.language,
             "total_turns": len(record.turns),
             "total_tokens_estimate": record.total_tokens_estimate,
             "total_cost_usd": record.total_cost_usd,

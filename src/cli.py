@@ -15,7 +15,7 @@ from src.config import (
     ensure_dirs,
     load_api_key,
 )
-from src.generator import ConversationGenerator, save_conversation
+from src.generator import ConversationGenerator, save_conversation, _estimate_context_tokens
 from src.openrouter_client import OpenRouterClient
 from src.prompts import HUMAN_PROFILES, get_human_profile
 
@@ -42,6 +42,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
         human_model=human_model,
         target_tokens=target,
         language=args.language,
+        verbose=args.verbose,
     )
 
     try:
@@ -56,6 +57,33 @@ def cmd_generate(args: argparse.Namespace) -> None:
             record.finished_at = "interrupted"
             record.total_cost_usd = client.total_cost
             save_conversation(record, OUTPUT_DIR)
+    except Exception as e:
+        console.print(f"\n[bold red]Error: {e}[/bold red]")
+        raise
+    finally:
+        client.close()
+
+
+def cmd_resume(args: argparse.Namespace) -> None:
+    """Resume/extend an existing conversation."""
+    ensure_dirs()
+    api_key = load_api_key()
+    client = OpenRouterClient(api_key)
+
+    jsonl_path = args.file
+    target = args.target_tokens or TARGET_TOKENS
+
+    try:
+        record = ConversationGenerator.resume(
+            client,
+            jsonl_path,
+            target_tokens=target,
+            verbose=args.verbose,
+            language_override=args.language,
+        )
+        save_conversation(record, OUTPUT_DIR)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted by user.[/yellow]")
     except Exception as e:
         console.print(f"\n[bold red]Error: {e}[/bold red]")
         raise
@@ -93,7 +121,31 @@ def main() -> None:
         "--language", type=str, default="english",
         help="Language for conversation (default: english). E.g. 'russian', 'hebrew'",
     )
+    gen.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show full messages and AI thinking in real time",
+    )
     gen.set_defaults(func=cmd_generate)
+
+    # resume
+    res = sub.add_parser("resume", help="Resume/extend an existing conversation")
+    res.add_argument(
+        "file", type=str,
+        help="Path to the JSONL file of the conversation to resume",
+    )
+    res.add_argument(
+        "--target-tokens", type=int,
+        help=f"New target token count (default: {TARGET_TOKENS:,})",
+    )
+    res.add_argument(
+        "--language", type=str, default=None,
+        help="Override language (normally loaded from saved conversation)",
+    )
+    res.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show full messages and AI thinking in real time",
+    )
+    res.set_defaults(func=cmd_resume)
 
     # profiles
     profiles = sub.add_parser("profiles", help="List human profiles")

@@ -62,6 +62,8 @@ class ConversationTurn:
     token_estimate: int = 0
     cost_usd: float = 0.0
     timestamp: str = ""
+    ai_context_tokens: int = 0    # cumulative AI context size after this turn
+    human_context_tokens: int = 0  # cumulative human-emulator context size after this turn
 
 
 @dataclass
@@ -573,6 +575,8 @@ class ConversationGenerator:
                 token_estimate=human_tokens,
                 cost_usd=human_cost,
                 timestamp=datetime.now(timezone.utc).isoformat(),
+                ai_context_tokens=_estimate_context_tokens(self._ai_messages),
+                human_context_tokens=_estimate_context_tokens(self._human_messages),
             )
             self._record.turns.append(human_turn)
             self._log_turn(human_turn)
@@ -609,6 +613,8 @@ class ConversationGenerator:
                 token_estimate=ai_tokens,
                 cost_usd=ai_cost,
                 timestamp=datetime.now(timezone.utc).isoformat(),
+                ai_context_tokens=_estimate_context_tokens(self._ai_messages),
+                human_context_tokens=_estimate_context_tokens(self._human_messages),
             )
             self._record.turns.append(ai_turn)
             self._log_turn(ai_turn)
@@ -688,6 +694,8 @@ class ConversationGenerator:
                 token_estimate=human_tokens,
                 cost_usd=human_cost,
                 timestamp=datetime.now(timezone.utc).isoformat(),
+                ai_context_tokens=_estimate_context_tokens(self._ai_messages),
+                human_context_tokens=_estimate_context_tokens(self._human_messages),
             )
             self._record.turns.append(human_turn)
             self._log_turn(human_turn)
@@ -741,6 +749,8 @@ class ConversationGenerator:
             token_estimate=human_tokens,
             cost_usd=human_cost,
             timestamp=datetime.now(timezone.utc).isoformat(),
+            ai_context_tokens=_estimate_context_tokens(self._ai_messages),
+            human_context_tokens=_estimate_context_tokens(self._human_messages),
         )
         self._record.turns.append(human_turn)
         self._log_turn(human_turn)
@@ -867,6 +877,8 @@ class ConversationGenerator:
                 token_estimate=turn_data.get("token_estimate", 0),
                 cost_usd=turn_data.get("cost_usd", 0.0),
                 timestamp=turn_data.get("timestamp", ""),
+                ai_context_tokens=turn_data.get("ai_context_tokens", 0),
+                human_context_tokens=turn_data.get("human_context_tokens", 0),
             ))
 
         last_turn = turns[-1]["turn_number"] if turns else 0
@@ -917,6 +929,8 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
                 "token_estimate": turn.token_estimate,
                 "cost_usd": turn.cost_usd,
                 "timestamp": turn.timestamp,
+                "ai_context_tokens": turn.ai_context_tokens,
+                "human_context_tokens": turn.human_context_tokens,
             }
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
@@ -942,8 +956,18 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
         for turn in record.turns:
             if turn.speaker == "human":
                 f.write(f"### 👤 {record.human_profile['name']} (turn {turn.turn_number})\n\n")
+                if turn.human_context_tokens or turn.ai_context_tokens:
+                    f.write(
+                        f"*👤 human ctx: ~{turn.human_context_tokens:,} tok"
+                        f" · 🧠 AI ctx: ~{turn.ai_context_tokens:,} tok*\n\n"
+                    )
             else:
                 f.write(f"### 🤖 AI (turn {turn.turn_number})\n\n")
+                if turn.ai_context_tokens or turn.human_context_tokens:
+                    f.write(
+                        f"*🧠 AI ctx: ~{turn.ai_context_tokens:,} tok"
+                        f" · 👤 human ctx: ~{turn.human_context_tokens:,} tok*\n\n"
+                    )
                 if turn.ai_thinking:
                     f.write(f"> *💭 Thinking: {turn.ai_thinking}*\n\n")
             f.write(f"{turn.visible_text}\n\n")

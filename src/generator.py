@@ -56,6 +56,20 @@ _INITIAL_AI_GREETING = (
     "but I'm glad to meet you."
 )
 
+_TOPIC_STALE_NOTE = (
+    "[System note: The conversation has been on the same topic for a while. "
+    "Time to shift gears — bring up something new from your life or interests. "
+    "Check your conversation plan for topics you haven't covered yet.]"
+)
+
+_B3_REFRESH_NOTE = (
+    "[System note: Something significant happened in your life recently — "
+    "maybe a work event, a conversation with someone, something you saw or read, "
+    "a mood shift, or a random everyday moment. Bring it up naturally in your "
+    "next message. It should be specific, emotionally charged, and unrelated "
+    "to what you've been discussing lately. Time to change the topic.]"
+)
+
 
 @dataclass
 class ConversationTurn:
@@ -69,6 +83,21 @@ class ConversationTurn:
     timestamp: str = ""
     ai_context_tokens: int = 0    # cumulative AI context size after this turn
     human_context_tokens: int = 0  # cumulative human-emulator context size after this turn
+
+
+@dataclass
+class ConversationEvent:
+    """A hidden system event that affects the human simulator or judge state."""
+    event_type: str
+    turn_number: int
+    source: str
+    timestamp: str = ""
+    message: str | None = None
+    previous_topic: str | None = None
+    current_topic: str | None = None
+    topic_changed: bool | None = None
+    nudge_injected: bool | None = None
+    suppression_reason: str | None = None
 
 
 @dataclass
@@ -88,6 +117,7 @@ class ConversationRecord:
     started_at: str = ""
     finished_at: str = ""
     ai_messages_raw: list[dict[str, Any]] = field(default_factory=list)
+    events: list[ConversationEvent] = field(default_factory=list)
 
 
 def _normalize_tool_arguments(messages: list[dict[str, Any]]) -> int:
@@ -305,6 +335,7 @@ class ConversationGenerator:
 
         self._last_tool_call_id: str | None = None
         self._current_topic: str | None = None
+        self._last_human_nudge_turn: int | None = None
         self._record = ConversationRecord(
             id=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
             human_profile=human_profile,
@@ -315,6 +346,62 @@ class ConversationGenerator:
             companion_mode=self.companion_mode,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
+
+    def _record_event(
+        self,
+        *,
+        event_type: str,
+        turn_number: int,
+        source: str,
+        message: str | None = None,
+        previous_topic: str | None = None,
+        current_topic: str | None = None,
+        topic_changed: bool | None = None,
+        nudge_injected: bool | None = None,
+        suppression_reason: str | None = None,
+    ) -> None:
+        self._record.events.append(
+            ConversationEvent(
+                event_type=event_type,
+                turn_number=turn_number,
+                source=source,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                message=message,
+                previous_topic=previous_topic,
+                current_topic=current_topic,
+                topic_changed=topic_changed,
+                nudge_injected=nudge_injected,
+                suppression_reason=suppression_reason,
+            )
+        )
+
+    def _queue_human_nudge(
+        self,
+        *,
+        turn_number: int,
+        source: str,
+        content: str,
+    ) -> tuple[bool, str | None]:
+        suppression_reason = None
+        if self._last_human_nudge_turn == turn_number:
+            suppression_reason = "already_nudged_this_turn"
+        else:
+            self._human_messages.append({
+                "role": "user",
+                "content": content,
+            })
+            self._last_human_nudge_turn = turn_number
+
+        injected = suppression_reason is None
+        self._record_event(
+            event_type="human_nudge",
+            turn_number=turn_number,
+            source=source,
+            message=content if injected else None,
+            nudge_injected=injected,
+            suppression_reason=suppression_reason,
+        )
+        return injected, suppression_reason
 
     def _check_topic_staleness(self, turn_number: int) -> None:
         """Use a cheap judge model to check if the conversation topic has changed.
@@ -358,19 +445,35 @@ class ConversationGenerator:
             console.print(f"  [dim yellow]Topic judge error: {exc}[/dim yellow]")
             return
 
+        previous_topic = self._current_topic
         self._current_topic = current_topic
 
+        nudge_injected: bool | None = None
+        suppression_reason: str | None = None
         if not topic_changed:
-            self._human_messages.append({
-                "role": "user",
-                "content": (
-                    "[System note: The conversation has been on the same topic for a while. "
-                    "Time to shift gears — bring up something new from your life or interests. "
-                    "Check your conversation plan for topics you haven't covered yet.]"
-                ),
-            })
+            nudge_injected, suppression_reason = self._queue_human_nudge(
+                turn_number=turn_number,
+                source="topic_judge",
+                content=_TOPIC_STALE_NOTE,
+            )
 
-        status = "changed" if topic_changed else "STALE → nudge injected"
+        self._record_event(
+            event_type="topic_judge",
+            turn_number=turn_number,
+            source="topic_judge",
+            previous_topic=previous_topic,
+            current_topic=current_topic,
+            topic_changed=topic_changed,
+            nudge_injected=nudge_injected,
+            suppression_reason=suppression_reason,
+        )
+
+        if topic_changed:
+            status = "changed"
+        elif nudge_injected:
+            status = "STALE -> nudge injected"
+        else:
+            status = f"STALE -> nudge suppressed ({suppression_reason})"
         console.print(f"  [dim]Topic judge (turn {turn_number}): {current_topic} — {status}[/dim]")
 
     _VALID_FINISH_REASONS = {"stop", "tool_calls", "end_turn"}
@@ -711,16 +814,13 @@ class ConversationGenerator:
             # B3: Human emulator refresh — force a life event / topic change
             # (checked after AI turn where turn_number is even, so %80 works)
             if turn_number % 80 == 0 and turn_number > 0:
-                self._human_messages.append({
-                    "role": "user",
-                    "content": (
-                        "[System note: Something significant happened in your life recently — "
-                        "maybe a work event, a conversation with someone, something you saw or read, "
-                        "a mood shift, or a random everyday moment. Bring it up naturally in your "
-                        "next message. It should be specific, emotionally charged, and unrelated "
-                        "to what you've been discussing lately. Time to change the topic.]"
-                    ),
-                })
+                injected, suppression_reason = self._queue_human_nudge(
+                    turn_number=turn_number,
+                    source="b3_refresh",
+                    content=_B3_REFRESH_NOTE,
+                )
+                refresh_status = "nudge injected" if injected else f"nudge suppressed ({suppression_reason})"
+                console.print(f"  [dim]Human refresh (turn {turn_number}): {refresh_status}[/dim]")
 
             # Topic judge: check for topic staleness
             # (checked after AI turn where turn_number is even, so %INTERVAL works)
@@ -872,6 +972,7 @@ class ConversationGenerator:
 
         metadata = lines[0]
         turns = [l for l in lines[1:] if l.get("type") == "turn"]
+        events = [l for l in lines[1:] if l.get("type") == "event"]
 
         profile = metadata["human_profile"]
         ai_model = metadata["ai_model"]
@@ -948,9 +1049,29 @@ class ConversationGenerator:
         gen._conversation_plan = conversation_plan
         gen._ai_messages = ai_messages
         gen._last_tool_call_id = last_tc_id
+        topic_events = [e for e in events if e.get("event_type") == "topic_judge"]
+        if topic_events:
+            gen._current_topic = topic_events[-1].get("current_topic")
+        nudge_events = [
+            e for e in events
+            if e.get("event_type") == "human_nudge" and e.get("nudge_injected")
+        ]
+        if nudge_events:
+            gen._last_human_nudge_turn = max(e.get("turn_number", 0) for e in nudge_events)
 
         # Rebuild human context from turns
         gen._init_human_context()
+        nudges_by_turn: dict[int, list[str]] = {}
+        for event in events:
+            if event.get("event_type") != "human_nudge":
+                continue
+            if not event.get("nudge_injected"):
+                continue
+            message = event.get("message")
+            turn_number = event.get("turn_number")
+            if not message or not isinstance(turn_number, int):
+                continue
+            nudges_by_turn.setdefault(turn_number, []).append(message)
         for turn_data in turns:
             speaker = turn_data["speaker"]
             text = turn_data["visible_text"]
@@ -958,6 +1079,8 @@ class ConversationGenerator:
                 gen._human_messages.append({"role": "assistant", "content": text})
             else:
                 gen._human_messages.append({"role": "user", "content": text})
+                for note in nudges_by_turn.get(turn_data["turn_number"], []):
+                    gen._human_messages.append({"role": "user", "content": note})
 
         # Rebuild record
         gen._record.id = metadata["conversation_id"]
@@ -966,6 +1089,19 @@ class ConversationGenerator:
         gen._record.language = language
         gen._record.companion_mode = companion_mode
         gen._record.started_at = metadata["started_at"]
+        for event_data in events:
+            gen._record.events.append(ConversationEvent(
+                event_type=event_data.get("event_type", "unknown"),
+                turn_number=event_data.get("turn_number", 0),
+                source=event_data.get("source", "unknown"),
+                timestamp=event_data.get("timestamp", ""),
+                message=event_data.get("message"),
+                previous_topic=event_data.get("previous_topic"),
+                current_topic=event_data.get("current_topic"),
+                topic_changed=event_data.get("topic_changed"),
+                nudge_injected=event_data.get("nudge_injected"),
+                suppression_reason=event_data.get("suppression_reason"),
+            ))
         for turn_data in turns:
             gen._record.turns.append(ConversationTurn(
                 turn_number=turn_data["turn_number"],
@@ -1032,6 +1168,22 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
             }
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
+        for event in record.events:
+            line = {
+                "type": "event",
+                "event_type": event.event_type,
+                "turn_number": event.turn_number,
+                "source": event.source,
+                "timestamp": event.timestamp,
+                "message": event.message,
+                "previous_topic": event.previous_topic,
+                "current_topic": event.current_topic,
+                "topic_changed": event.topic_changed,
+                "nudge_injected": event.nudge_injected,
+                "suppression_reason": event.suppression_reason,
+            }
+            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+
     # Save readable markdown
     md_path = output_dir / f"{base}.md"
     with open(md_path, "w", encoding="utf-8") as f:
@@ -1049,6 +1201,22 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
         if record.conversation_plan:
             f.write(f"## Conversation Plan\n\n")
             f.write(f"{record.conversation_plan}\n\n")
+        if record.events:
+            f.write("## System Events\n\n")
+            for event in record.events:
+                parts = [f"turn {event.turn_number}", f"{event.event_type} ({event.source})"]
+                if event.current_topic:
+                    parts.append(f"topic={event.current_topic}")
+                if event.topic_changed is not None:
+                    parts.append(f"changed={event.topic_changed}")
+                if event.nudge_injected is not None:
+                    parts.append(f"nudge_injected={event.nudge_injected}")
+                if event.suppression_reason:
+                    parts.append(f"suppressed={event.suppression_reason}")
+                f.write(f"- {' · '.join(parts)}\n")
+                if event.message:
+                    f.write(f"  - note: {event.message}\n")
+            f.write("\n")
         f.write("---\n\n")
 
         for turn in record.turns:

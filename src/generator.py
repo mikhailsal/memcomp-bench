@@ -51,6 +51,11 @@ from src.prompts import (
 
 console = Console()
 
+_INITIAL_AI_GREETING = (
+    "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, "
+    "but I'm glad to meet you."
+)
+
 
 @dataclass
 class ConversationTurn:
@@ -126,6 +131,90 @@ def _estimate_context_tokens(messages: list[dict[str, Any]]) -> int:
                 args = tc.get("function", {}).get("arguments", "")
                 total += _estimate_tokens(args)
     return total
+
+
+def _build_ai_tool_message(
+    text: str,
+    tool_call_id: str,
+    *,
+    thinking: str | None = None,
+) -> dict[str, Any]:
+    """Construct an assistant tool-call message with a fixed tool call id."""
+    return {
+        "role": "assistant",
+        "content": thinking,
+        "tool_calls": [{
+            "id": tool_call_id,
+            "type": "function",
+            "function": {
+                "name": "write_message_to_human",
+                "arguments": json.dumps({"text": text}, ensure_ascii=False),
+            },
+        }],
+    }
+
+
+def _is_restorable_ai_context(ai_messages: Any) -> bool:
+    """Return True when saved raw AI context looks usable for resume."""
+    if not isinstance(ai_messages, list) or len(ai_messages) < 3:
+        return False
+    if ai_messages[0].get("role") != "system":
+        return False
+    return any(msg.get("tool_calls") for msg in ai_messages)
+
+
+def _rebuild_ai_context_from_turns(
+    ai_system_prompt: str,
+    turns: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Rebuild AI-side tool history from saved turns.
+
+    This is a fallback for older or partial runs where the raw AI context file was
+    not saved correctly.
+    """
+    ai_messages: list[dict[str, Any]] = [
+        {"role": "system", "content": ai_system_prompt},
+        {"role": "user", "content": "[start]"},
+    ]
+    tool_index = 0
+    last_tool_call_id: str | None = None
+
+    for turn in turns:
+        speaker = turn["speaker"]
+        text = turn["visible_text"]
+        if speaker == "human":
+            if last_tool_call_id is None:
+                tool_index += 1
+                last_tool_call_id = f"wmth{tool_index:05d}"
+                ai_messages.append(
+                    _build_ai_tool_message(_INITIAL_AI_GREETING, last_tool_call_id)
+                )
+            ai_messages.append(make_human_tool_result(text, last_tool_call_id))
+            continue
+
+        tool_index += 1
+        last_tool_call_id = f"wmth{tool_index:05d}"
+        ai_messages.append(
+            _build_ai_tool_message(
+                text,
+                last_tool_call_id,
+                thinking=turn.get("ai_thinking"),
+            )
+        )
+
+    return ai_messages
+
+
+def _turns_to_context_rows(turns: list[ConversationTurn]) -> list[dict[str, Any]]:
+    """Normalize record turns into the shape used by the AI-context rebuilder."""
+    return [
+        {
+            "speaker": turn.speaker,
+            "visible_text": turn.visible_text,
+            "ai_thinking": turn.ai_thinking,
+        }
+        for turn in turns
+    ]
 
 
 def _split_thinking_and_message(text: str) -> tuple[str | None, str | None]:
@@ -784,15 +873,6 @@ class ConversationGenerator:
         metadata = lines[0]
         turns = [l for l in lines[1:] if l.get("type") == "turn"]
 
-        # Load raw AI context
-        with open(raw_json_path, "r", encoding="utf-8") as f:
-            ai_messages = json.load(f)
-
-        # Clean up any Unicode-escaped tool arguments from older runs
-        chars_saved = _normalize_tool_arguments(ai_messages)
-        if chars_saved > 0:
-            console.print(f"  [dim]Normalized Unicode escapes in context (saved ~{chars_saved:,} chars / ~{chars_saved // 4:,} tokens)[/dim]")
-
         profile = metadata["human_profile"]
         ai_model = metadata["ai_model"]
         human_model = metadata["human_model"]
@@ -801,6 +881,24 @@ class ConversationGenerator:
         language = language_override or metadata.get("language", "english")
         companion_mode = metadata.get("companion_mode", "supportive")
         previous_cost = metadata.get("total_cost_usd", 0.0)
+
+        # Load raw AI context
+        with open(raw_json_path, "r", encoding="utf-8") as f:
+            ai_messages = json.load(f)
+
+        if not _is_restorable_ai_context(ai_messages):
+            ai_messages = _rebuild_ai_context_from_turns(
+                build_ai_system_prompt(seed_words, companion_mode=companion_mode),
+                turns,
+            )
+            console.print(
+                "  [dim yellow]Raw AI context missing or incomplete; rebuilt from saved turns.[/dim yellow]"
+            )
+
+        # Clean up any Unicode-escaped tool arguments from older runs
+        chars_saved = _normalize_tool_arguments(ai_messages)
+        if chars_saved > 0:
+            console.print(f"  [dim]Normalized Unicode escapes in context (saved ~{chars_saved:,} chars / ~{chars_saved // 4:,} tokens)[/dim]")
 
         console.print(f"\n[bold]Resuming conversation with {profile['name']}[/bold]")
         console.print(f"  From: {jsonl_path.name}")
@@ -973,9 +1071,19 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
             f.write(f"{turn.visible_text}\n\n")
 
     # Save raw AI messages (for compression testing)
+    raw_messages = record.ai_messages_raw
+    if not _is_restorable_ai_context(raw_messages) and record.turns:
+        raw_messages = _rebuild_ai_context_from_turns(
+            build_ai_system_prompt(record.seed_words, companion_mode=record.companion_mode),
+            _turns_to_context_rows(record.turns),
+        )
+        record.ai_messages_raw = raw_messages
+    if record.turns and record.total_tokens_estimate <= 0:
+        record.total_tokens_estimate = _estimate_context_tokens(raw_messages)
+
     raw_path = output_dir / f"{base}_raw_ai_context.json"
     with open(raw_path, "w", encoding="utf-8") as f:
-        json.dump(record.ai_messages_raw, f, ensure_ascii=False, indent=2)
+        json.dump(raw_messages, f, ensure_ascii=False, indent=2)
 
     console.print(f"\n[bold]Files saved:[/bold]")
     console.print(f"  📄 {jsonl_path}")

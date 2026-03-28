@@ -78,6 +78,31 @@ class ConversationRecord:
     ai_messages_raw: list[dict[str, Any]] = field(default_factory=list)
 
 
+def _normalize_tool_arguments(messages: list[dict[str, Any]]) -> int:
+    """Re-encode tool call arguments with ensure_ascii=False to remove \\uXXXX bloat.
+
+    Returns the number of characters saved.
+    """
+    saved = 0
+    for msg in messages:
+        if not msg.get("tool_calls"):
+            continue
+        for tc in msg["tool_calls"]:
+            func = tc.get("function", {})
+            args_str = func.get("arguments", "")
+            if not args_str:
+                continue
+            try:
+                parsed = json.loads(args_str)
+                clean = json.dumps(parsed, ensure_ascii=False)
+                if len(clean) < len(args_str):
+                    saved += len(args_str) - len(clean)
+                    func["arguments"] = clean
+            except (json.JSONDecodeError, TypeError):
+                continue
+    return saved
+
+
 def _estimate_tokens(text: str) -> int:
     """Rough token estimate: ~4 chars per token."""
     return len(text) // 4 if text else 0
@@ -191,8 +216,14 @@ class ConversationGenerator:
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
+    _VALID_FINISH_REASONS = {"stop", "tool_calls", "end_turn"}
+
     def _get_ai_response(self) -> tuple[str | None, str | None, str | None]:
-        """Call the AI model and extract: (visible_text, thinking, tool_call_id)."""
+        """Call the AI model and extract: (visible_text, thinking, tool_call_id).
+
+        Returns (None, ..., ...) on malformed or truncated responses so the
+        caller's retry logic can kick in.
+        """
         response = self.client.chat(
             model=self.ai_model,
             messages=self._ai_messages,
@@ -200,6 +231,11 @@ class ConversationGenerator:
             temperature=AI_TEMPERATURE,
             tools=AI_TOOLS,
         )
+
+        fr = (response.finish_reason or "").strip()
+        if fr and fr not in self._VALID_FINISH_REASONS:
+            console.print(f"[yellow]AI finish_reason: {fr} — retrying[/yellow]")
+            return None, None, None
 
         thinking = response.content
         visible_text, tc_id = extract_tool_call_text(response)
@@ -246,7 +282,7 @@ class ConversationGenerator:
                     "type": "function",
                     "function": {
                         "name": "write_message_to_human",
-                        "arguments": json.dumps({"text": visible_text}),
+                        "arguments": json.dumps({"text": visible_text}, ensure_ascii=False),
                     },
                 }],
             }
@@ -261,7 +297,7 @@ class ConversationGenerator:
                     "type": "function",
                     "function": {
                         "name": "write_message_to_human",
-                        "arguments": json.dumps({"text": visible_text}),
+                        "arguments": json.dumps({"text": visible_text}, ensure_ascii=False),
                     },
                 }],
             }
@@ -648,6 +684,11 @@ class ConversationGenerator:
         # Load raw AI context
         with open(raw_json_path, "r", encoding="utf-8") as f:
             ai_messages = json.load(f)
+
+        # Clean up any Unicode-escaped tool arguments from older runs
+        chars_saved = _normalize_tool_arguments(ai_messages)
+        if chars_saved > 0:
+            console.print(f"  [dim]Normalized Unicode escapes in context (saved ~{chars_saved:,} chars / ~{chars_saved // 4:,} tokens)[/dim]")
 
         profile = metadata["human_profile"]
         ai_model = metadata["ai_model"]

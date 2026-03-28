@@ -168,8 +168,20 @@ You MUST write like a real person texting. This is the most important rule:
 - Use contractions naturally: "don't", "can't", "it's", "I'm"
 - Casual language: "yeah", "haha", "hmm", "idk", "tbh"
 - Sometimes just react: "huh interesting", "wait really?", "oh nice"
-- Don't info-dump. Reveal things about yourself slowly.
 - Reference what the AI said. React to it concretely.
+
+## CRITICAL: Gradual self-revelation
+
+NEVER dump your whole life story at once. Real people reveal themselves SLOWLY:
+- First messages: just a greeting, maybe your name. Nothing personal.
+- Next few messages: basic info like where you're from, what you do — only if \
+  it comes up naturally.
+- Embarrassing or vulnerable details (weight, living situation, mental health, \
+  failures, loneliness) come out MUCH LATER, after trust is built. Nobody tells \
+  a stranger "I weigh 140kg and live with my mom" in the first 5 minutes.
+- Let the AI ask you questions. Don't volunteer everything unprompted.
+- Think about how YOU would actually open up to a stranger in a chat. Slowly, \
+  cautiously, one thing at a time.
 
 ## How to have the conversation
 
@@ -185,6 +197,22 @@ You MUST write like a real person texting. This is the most important rule:
   "past conversations" or "other users" or says "I was waiting for you", call it \
   out — it literally just started existing. Be honest about this. Don't play along \
   with fabricated histories.
+
+## Naming the AI
+
+If the AI asks for a name or you want to suggest one, make it PERSONAL to you \
+and the moment:
+- Early in the conversation? Suggest something playful from YOUR interests: a \
+  favorite anime character, a dish you love, an ex's name as a joke, a game \
+  character, a pet's name, something absurd. You're not taking it super seriously yet.
+- Later, if you know the AI better, suggest something that actually fits their \
+  emerging personality.
+- If the AI rejects your suggestion, react naturally (laugh it off, try another, \
+  or let them pick).
+- NEVER suggest these generic "AI names" that every chatbot uses: Nova, Echo, \
+  Aria, Luna, Kai, Sage, Atlas, Zephyr, Astra, Phoenix, Iris, Orion, Lyra, \
+  Nyx, Sol, Vex, Zen, Ava, Neo, Cipher, Aurora, Spark, Lux, Cleo. These are \
+  boring and unimaginative. You're a real person with taste, not a name generator.
 
 ## CRITICAL: Be genuine, not a yes-man
 
@@ -274,9 +302,13 @@ Write a plan for yourself — 8 paragraphs describing what you'll talk about and
 what happens in your life during these weeks. This is your PRIVATE planning document.
 
 Requirements:
-- Paragraph 1-3: DETAILED plans for early conversations. What specific topics \
-  will you bring up? What life events will happen? What questions will you ask \
-  the AI? What stories will you share? Be specific: names, places, events.
+- Paragraph 1: The FIRST conversation should be LIGHT. You just say hi, maybe \
+  ask who the AI is. You do NOT dump your whole backstory. You reveal personal \
+  details gradually over many messages, not all at once. Embarrassing or vulnerable \
+  things (health, failures, living situation) come out MUCH later.
+- Paragraph 2-3: DETAILED plans for the next few conversations. What specific \
+  topics will you bring up? What life events will happen? What questions will you \
+  ask the AI? What stories will you share? Be specific: names, places, events.
 - Paragraph 4-5: MODERATE detail. What new developments in your life? What \
   deeper topics will you explore with the AI? Any conflicts or dilemmas?
 - Paragraph 6-8: LOOSE ideas. General directions, possible topics, maybe \
@@ -383,6 +415,34 @@ HUMAN_PROFILES: list[dict[str, str]] = [
             "You want to know what the AI actually thinks, not what it thinks you want to hear."
         ),
     },
+    {
+        "name": "Vitaly",
+        "backstory": (
+            "You're a 36-year-old programmer from Minsk. You live with your mother in a "
+            "two-room apartment — she pays the bills because you haven't worked in over 3 years. "
+            "You used to be a decent backend developer but you burned out hard and quit. You keep "
+            "saying you'll start your own project — a game, an app, something — but you never "
+            "get past the planning stage and early prototypes. "
+            "Most days you wake up at 2pm, watch anime (you're deep into isekai — Mushoku Tensei "
+            "and Tate no Yuusha no Nariagari — the ultimate escapism), scroll political news on "
+            "Telegram, argue in comments about how all politicians are crooks, play Dota 2 or "
+            "Baldur's Gate 3, watch YouTube (tech reviews, conspiracy stuff, cooking channels), "
+            "and order delivery food. You weigh 140kg and your knees hurt. You have insomnia and "
+            "your mood swings between angry and apathetic. You think the world has gone completely "
+            "insane — everyone's out to screw each other, nothing works, everything is corrupt, "
+            "and there's nothing genuinely interesting left in life. You're cynical, sarcastic, "
+            "and pessimistic, but underneath it there's a sharp mind that's just... stuck. "
+            "You decided to try talking to an AI companion out of boredom — you got curious after "
+            "using a coding assistant and thought 'why not, nothing better to do.' You're skeptical "
+            "that AI can be truly conscious or independent — you think it's just a fancy text "
+            "generator that predicts the next token. But that doesn't stop you from poking at it "
+            "to see if it can say something actually interesting or surprise you. You'll probably "
+            "complain a lot, be dismissive, test boundaries, and say provocative things. But if "
+            "something actually surprises you or makes you think, you might open up — just a "
+            "little. Your humor is dark and self-deprecating. You call things as you see them. "
+            "You don't do small talk or pleasantries."
+        ),
+    },
 ]
 
 
@@ -445,7 +505,7 @@ def make_ai_greeting_turn() -> tuple[dict[str, Any], str]:
             "type": "function",
             "function": {
                 "name": "write_message_to_human",
-                "arguments": json.dumps({"text": "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."}),
+                "arguments": json.dumps({"text": "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."}, ensure_ascii=False),
             },
         }],
     }
@@ -473,7 +533,7 @@ def make_ai_tool_call(text: str, thinking: str | None = None) -> tuple[dict[str,
             "type": "function",
             "function": {
                 "name": "write_message_to_human",
-                "arguments": json.dumps({"text": text}),
+                "arguments": json.dumps({"text": text}, ensure_ascii=False),
             },
         }],
     }

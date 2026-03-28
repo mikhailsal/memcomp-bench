@@ -18,13 +18,21 @@ API_CALL_TIMEOUT = 120
 
 # AI companion model — high independence score, good value
 AI_MODEL = "google/gemini-3.1-flash-lite-preview"
-AI_TEMPERATURE = 0.8
+AI_TEMPERATURE = 1.1
 AI_MAX_TOKENS = 1024
 
 # Human simulator model — fast, cheap, excellent instruction following
 HUMAN_MODEL = "x-ai/grok-4.1-fast"
 HUMAN_TEMPERATURE = 0.9
-HUMAN_MAX_TOKENS = 120
+HUMAN_MAX_TOKENS = 180
+
+# Companion mode: "honest" (default) — values honesty over comfort
+COMPANION_MODE = "honest"
+
+# Topic judge model — same as AI model for quality
+JUDGE_MODEL = AI_MODEL
+JUDGE_MAX_TOKENS = 200
+TOPIC_CHECK_INTERVAL = 20  # Check topic every N turns
 
 # Conversation parameters
 TARGET_TOKENS = 70_000

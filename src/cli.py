@@ -22,13 +22,31 @@ from src.prompts import HUMAN_PROFILES, get_human_profile
 console = Console()
 
 
+def _resolve_profile(value: str) -> dict[str, str]:
+    """Resolve a profile by name (case-insensitive) or numeric index."""
+    # Try as number first
+    try:
+        idx = int(value)
+        return get_human_profile(idx)
+    except ValueError:
+        pass
+    # Try by name
+    lower = value.lower()
+    for p in HUMAN_PROFILES:
+        if p["name"].lower() == lower:
+            return p
+    names = ", ".join(p["name"] for p in HUMAN_PROFILES)
+    print(f"ERROR: Unknown profile '{value}'. Available: {names}", file=sys.stderr)
+    sys.exit(1)
+
+
 def cmd_generate(args: argparse.Namespace) -> None:
     """Generate a conversation."""
     ensure_dirs()
     api_key = load_api_key()
     client = OpenRouterClient(api_key)
 
-    profile = get_human_profile(args.profile)
+    profile = _resolve_profile(args.profile)
     console.print(f"[bold]Using human profile: {profile['name']}[/bold]")
 
     ai_model = args.ai_model or AI_MODEL
@@ -42,6 +60,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
         human_model=human_model,
         target_tokens=target,
         language=args.language,
+        companion_mode=args.companion_mode,
         verbose=args.verbose,
     )
 
@@ -108,8 +127,8 @@ def main() -> None:
     # generate
     gen = sub.add_parser("generate", help="Generate a conversation")
     gen.add_argument(
-        "--profile", type=int, default=0,
-        help="Human profile index (see 'profiles' command)",
+        "--profile", type=str, default="0",
+        help="Human profile name or index (see 'profiles' command). E.g. --profile vitaly",
     )
     gen.add_argument("--ai-model", type=str, help=f"AI model (default: {AI_MODEL})")
     gen.add_argument("--human-model", type=str, help=f"Human model (default: {HUMAN_MODEL})")
@@ -120,6 +139,11 @@ def main() -> None:
     gen.add_argument(
         "--language", type=str, default="english",
         help="Language for conversation (default: english). E.g. 'russian', 'hebrew'",
+    )
+    gen.add_argument(
+        "--companion-mode", type=str, default="honest",
+        choices=["honest"],
+        help="Companion mode (default: honest — values honesty over comfort)",
     )
     gen.add_argument(
         "-v", "--verbose", action="store_true",

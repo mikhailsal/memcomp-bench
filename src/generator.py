@@ -22,11 +22,15 @@ from src.config import (
     AI_MAX_TOKENS,
     AI_MODEL,
     AI_TEMPERATURE,
+    COMPANION_MODE,
     HUMAN_MAX_TOKENS,
     HUMAN_MODEL,
     HUMAN_TEMPERATURE,
+    JUDGE_MAX_TOKENS,
+    JUDGE_MODEL,
     MAX_TURNS,
     TARGET_TOKENS,
+    TOPIC_CHECK_INTERVAL,
 )
 from src.openrouter_client import OpenRouterClient
 from src.prompts import (
@@ -70,6 +74,7 @@ class ConversationRecord:
     seed_words: list[str] = field(default_factory=list)
     conversation_plan: str = ""
     language: str = "english"
+    companion_mode: str = "supportive"
     turns: list[ConversationTurn] = field(default_factory=list)
     total_tokens_estimate: int = 0
     total_cost_usd: float = 0.0
@@ -181,6 +186,7 @@ class ConversationGenerator:
         target_tokens: int = TARGET_TOKENS,
         max_turns: int = MAX_TURNS,
         language: str = "english",
+        companion_mode: str = COMPANION_MODE,
         verbose: bool = False,
     ) -> None:
         self.client = client
@@ -190,10 +196,11 @@ class ConversationGenerator:
         self.target_tokens = target_tokens
         self.max_turns = max_turns
         self.language = language.lower()
+        self.companion_mode = companion_mode
         self.verbose = verbose
 
         self._seed_words = generate_seed(5)
-        self._ai_system_prompt = build_ai_system_prompt(self._seed_words)
+        self._ai_system_prompt = build_ai_system_prompt(self._seed_words, companion_mode=self.companion_mode)
         self._conversation_plan: str = ""
 
         # AI context: system + conversation history (tool-role format)
@@ -206,6 +213,7 @@ class ConversationGenerator:
         self._human_messages: list[dict[str, Any]] = []
 
         self._last_tool_call_id: str | None = None
+        self._current_topic: str | None = None
         self._record = ConversationRecord(
             id=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
             human_profile=human_profile,
@@ -213,8 +221,66 @@ class ConversationGenerator:
             human_model=human_model,
             seed_words=self._seed_words,
             language=self.language,
+            companion_mode=self.companion_mode,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
+
+    def _check_topic_staleness(self, turn_number: int) -> None:
+        """Use a cheap judge model to check if the conversation topic has changed.
+        If the topic is stale, inject a nudge to the human to change it."""
+        recent_turns = self._record.turns[-20:]
+        if not recent_turns:
+            return
+
+        formatted = "\n".join(
+            f"{t.speaker.upper()}: {t.visible_text}" for t in recent_turns
+        )
+        prompt = (
+            "You are a conversation topic analyzer. Below are the last messages from a conversation.\n\n"
+            f"Previous main topic: {self._current_topic or 'unknown (conversation just started)'}\n\n"
+            f"Messages:\n{formatted}\n\n"
+            'Answer in JSON:\n'
+            '{"topic_changed": true/false, "current_topic": "brief 3-5 word topic description"}\n\n'
+            "If the conversation has been on the same topic for these messages, set topic_changed to false."
+        )
+        messages = [
+            {"role": "system", "content": "You are a conversation topic analyzer. Respond only in valid JSON."},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            response = self.client.chat(
+                model=JUDGE_MODEL,
+                messages=messages,
+                max_tokens=JUDGE_MAX_TOKENS,
+                temperature=0.0,
+            )
+            raw = (response.content or "").strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1]
+            if raw.endswith("```"):
+                raw = raw.rsplit("```", 1)[0]
+            result = json.loads(raw.strip())
+            topic_changed = result.get("topic_changed", False)
+            current_topic = result.get("current_topic", "unknown")
+        except Exception as exc:
+            console.print(f"  [dim yellow]Topic judge error: {exc}[/dim yellow]")
+            return
+
+        self._current_topic = current_topic
+
+        if not topic_changed:
+            self._human_messages.append({
+                "role": "user",
+                "content": (
+                    "[System note: The conversation has been on the same topic for a while. "
+                    "Time to shift gears — bring up something new from your life or interests. "
+                    "Check your conversation plan for topics you haven't covered yet.]"
+                ),
+            })
+
+        status = "changed" if topic_changed else "STALE → nudge injected"
+        console.print(f"  [dim]Topic judge (turn {turn_number}): {current_topic} — {status}[/dim]")
 
     _VALID_FINISH_REASONS = {"stop", "tool_calls", "end_turn"}
 
@@ -223,6 +289,11 @@ class ConversationGenerator:
 
         Returns (None, ..., ...) on malformed or truncated responses so the
         caller's retry logic can kick in.
+        
+        Reasoning/thinking can come from three places (checked in priority order):
+        1. The 'reasoning' parameter inside the tool call arguments
+        2. The message content field (as JSON with a "reasoning" key)
+        3. The message content field (as JSON with a "thoughts" key, for backward compat)
         """
         response = self.client.chat(
             model=self.ai_model,
@@ -238,7 +309,11 @@ class ConversationGenerator:
             return None, None, None
 
         thinking = response.content
-        visible_text, tc_id = extract_tool_call_text(response)
+        visible_text, tc_id, tool_reasoning = extract_tool_call_text(response)
+
+        # If reasoning was passed inside tool call args, prefer it
+        if tool_reasoning:
+            thinking = tool_reasoning
 
         if visible_text is not None:
             # Tool call was used — but the model may have put JSON thinking
@@ -246,7 +321,8 @@ class ConversationGenerator:
             if visible_text.strip().startswith("{"):
                 msg_part, json_part = _split_thinking_and_message(visible_text)
                 if json_part:
-                    thinking = json_part
+                    if not tool_reasoning:
+                        thinking = json_part
                     visible_text = msg_part
         elif thinking:
             # No tool call — content has both thinking and message
@@ -378,13 +454,11 @@ class ConversationGenerator:
                 thinking_display = turn.ai_thinking
                 try:
                     parsed = json.loads(turn.ai_thinking)
-                    parts = []
-                    if parsed.get("thoughts"):
-                        parts.append(f"💭 {parsed['thoughts']}")
-                    if parsed.get("feelings"):
-                        parts.append(f"💗 {parsed['feelings']}")
-                    if parts:
-                        thinking_display = "\n".join(parts)
+                    if parsed.get("reasoning"):
+                        thinking_display = f"🧠 {parsed['reasoning']}"
+                    elif parsed.get("thoughts"):
+                        # Backward compat with older conversations
+                        thinking_display = f"💭 {parsed['thoughts']}"
                 except (json.JSONDecodeError, AttributeError):
                     pass
                 console.print()
@@ -538,6 +612,25 @@ class ConversationGenerator:
             )
             self._record.turns.append(ai_turn)
             self._log_turn(ai_turn)
+
+            # B3: Human emulator refresh — force a life event / topic change
+            # (checked after AI turn where turn_number is even, so %80 works)
+            if turn_number % 80 == 0 and turn_number > 0:
+                self._human_messages.append({
+                    "role": "user",
+                    "content": (
+                        "[System note: Something significant happened in your life recently — "
+                        "maybe a work event, a conversation with someone, something you saw or read, "
+                        "a mood shift, or a random everyday moment. Bring it up naturally in your "
+                        "next message. It should be specific, emotionally charged, and unrelated "
+                        "to what you've been discussing lately. Time to change the topic.]"
+                    ),
+                })
+
+            # Topic judge: check for topic staleness
+            # (checked after AI turn where turn_number is even, so %INTERVAL works)
+            if turn_number % TOPIC_CHECK_INTERVAL == 0 and turn_number > 0:
+                self._check_topic_staleness(turn_number)
 
             context_tokens = _estimate_context_tokens(self._ai_messages)
 
@@ -696,6 +789,7 @@ class ConversationGenerator:
         seed_words = metadata.get("seed_words", [])
         conversation_plan = metadata.get("conversation_plan", "")
         language = language_override or metadata.get("language", "english")
+        companion_mode = metadata.get("companion_mode", "supportive")
         previous_cost = metadata.get("total_cost_usd", 0.0)
 
         console.print(f"\n[bold]Resuming conversation with {profile['name']}[/bold]")
@@ -734,6 +828,7 @@ class ConversationGenerator:
             human_model=human_model,
             target_tokens=target_tokens,
             language=language,
+            companion_mode=companion_mode,
             verbose=verbose,
         )
 
@@ -761,6 +856,7 @@ class ConversationGenerator:
         gen._record.seed_words = seed_words
         gen._record.conversation_plan = conversation_plan
         gen._record.language = language
+        gen._record.companion_mode = companion_mode
         gen._record.started_at = metadata["started_at"]
         for turn_data in turns:
             gen._record.turns.append(ConversationTurn(
@@ -801,6 +897,7 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
             "seed_words": record.seed_words,
             "conversation_plan": record.conversation_plan,
             "language": record.language,
+            "companion_mode": record.companion_mode,
             "total_turns": len(record.turns),
             "total_tokens_estimate": record.total_tokens_estimate,
             "total_cost_usd": record.total_cost_usd,

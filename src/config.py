@@ -13,13 +13,25 @@ OUTPUT_DIR = PROJECT_ROOT / "output"
 ENV_PATH = PROJECT_ROOT / ".env"
 CONFIGS_PATH = PROJECT_ROOT / "configs"
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+# Load .env early so env vars are available for config constants below
+load_dotenv(ENV_PATH)
+
+OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 API_CALL_TIMEOUT = 120
 
 # AI companion model — high independence score, good value
-AI_MODEL = "google/gemini-3.1-flash-lite-preview"
+AI_MODEL = "minimax/minimax-m2.7"
 AI_TEMPERATURE = 1.1
 AI_MAX_TOKENS = 1024
+
+# Provider routing — force official MiniMax provider via OpenRouter
+# Set to None to let OpenRouter auto-route, or a dict like {"only": ["minimax"]}
+AI_PROVIDER: dict | None = {"only": ["minimax"], "allow_fallbacks": False}
+
+# Reasoning control — minimize native reasoning but keep it visible
+# (MiniMax M2.7 requires reasoning enabled; cannot be disabled)
+# Set to None to use model defaults, or a dict like {"effort": "minimal"}
+AI_REASONING: dict | None = {"effort": "minimal"}
 
 # Human simulator model — fast, cheap, excellent instruction following
 HUMAN_MODEL = "x-ai/grok-4.1-fast"
@@ -29,8 +41,8 @@ HUMAN_MAX_TOKENS = 180
 # Companion mode: "honest" (default) — values honesty over comfort
 COMPANION_MODE = "honest"
 
-# Topic judge model — same as AI model for quality
-JUDGE_MODEL = AI_MODEL
+# Topic judge model — set explicitly (not tied to AI_MODEL)
+JUDGE_MODEL = "google/gemini-3.1-flash-lite-preview"
 JUDGE_MAX_TOKENS = 200
 TOPIC_CHECK_INTERVAL = 20  # Check topic every N turns
 

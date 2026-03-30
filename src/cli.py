@@ -9,6 +9,8 @@ from rich.console import Console
 
 from src.config import (
     AI_MODEL,
+    AI_PROVIDER,
+    AI_REASONING,
     HUMAN_MODEL,
     OUTPUT_DIR,
     TARGET_TOKENS,
@@ -53,6 +55,11 @@ def cmd_generate(args: argparse.Namespace) -> None:
     human_model = args.human_model or HUMAN_MODEL
     target = args.target_tokens or TARGET_TOKENS
 
+    # Provider override: CLI --provider sets only=[slug], no fallbacks
+    ai_provider = AI_PROVIDER
+    if args.provider:
+        ai_provider = {"only": [args.provider], "allow_fallbacks": False}
+
     generator = ConversationGenerator(
         client,
         profile,
@@ -62,6 +69,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
         language=args.language,
         companion_mode=args.companion_mode,
         verbose=args.verbose,
+        ai_provider=ai_provider,
+        ai_reasoning=AI_REASONING,
     )
 
     try:
@@ -132,6 +141,10 @@ def main() -> None:
     )
     gen.add_argument("--ai-model", type=str, help=f"AI model (default: {AI_MODEL})")
     gen.add_argument("--human-model", type=str, help=f"Human model (default: {HUMAN_MODEL})")
+    gen.add_argument(
+        "--provider", type=str, default=None,
+        help="Force a specific OpenRouter provider slug for the AI model (e.g. 'minimax')",
+    )
     gen.add_argument(
         "--target-tokens", type=int,
         help=f"Target token count (default: {TARGET_TOKENS:,})",

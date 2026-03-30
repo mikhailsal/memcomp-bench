@@ -6,6 +6,7 @@ the MAI Companion protocol. The human simulator uses standard user/assistant for
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ from rich.text import Text
 from src.config import (
     AI_MAX_TOKENS,
     AI_MODEL,
+    AI_PROVIDER,
+    AI_REASONING,
     AI_TEMPERATURE,
     COMPANION_MODE,
     HUMAN_MAX_TOKENS,
@@ -78,11 +81,25 @@ class ConversationTurn:
     speaker: str  # "human" or "ai"
     visible_text: str
     ai_thinking: str | None = None
+    ai_content: str | None = None
+    ai_reasoning: str | None = None
+    ai_tool_calls: list[dict[str, Any]] | None = None
     token_estimate: int = 0
     cost_usd: float = 0.0
     timestamp: str = ""
     ai_context_tokens: int = 0    # cumulative AI context size after this turn
     human_context_tokens: int = 0  # cumulative human-emulator context size after this turn
+
+
+@dataclass
+class ParsedAIResponse:
+    """Normalized AI response fields used by the generator."""
+    visible_text: str | None
+    display_thinking: str | None
+    tool_call_id: str | None
+    assistant_content: str | None = None
+    assistant_reasoning: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -156,6 +173,8 @@ def _estimate_context_tokens(messages: list[dict[str, Any]]) -> int:
     for msg in messages:
         if msg.get("content"):
             total += _estimate_tokens(msg["content"])
+        if msg.get("reasoning"):
+            total += _estimate_tokens(msg["reasoning"])
         if msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
                 args = tc.get("function", {}).get("arguments", "")
@@ -163,25 +182,72 @@ def _estimate_context_tokens(messages: list[dict[str, Any]]) -> int:
     return total
 
 
+def _uses_native_reasoning_field(reasoning_config: dict[str, Any] | None) -> bool:
+    """Return True when assistant reasoning should be serialized separately."""
+    return bool(reasoning_config)
+
+
+def _looks_like_json_object(text: str | None) -> bool:
+    """Return True when text appears to be a JSON object payload."""
+    return bool(text and text.lstrip().startswith("{"))
+
+
 def _build_ai_tool_message(
     text: str,
     tool_call_id: str,
     *,
     thinking: str | None = None,
+    assistant_content: str | None = None,
+    assistant_reasoning: str | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    use_reasoning_field: bool = False,
 ) -> dict[str, Any]:
     """Construct an assistant tool-call message with a fixed tool call id."""
-    return {
+    normalized_tool_calls = copy.deepcopy(tool_calls) if tool_calls else [{
+        "id": tool_call_id,
+        "type": "function",
+        "function": {
+            "name": "write_message_to_human",
+            "arguments": json.dumps({"text": text}, ensure_ascii=False),
+        },
+    }]
+    message: dict[str, Any] = {
         "role": "assistant",
-        "content": thinking,
-        "tool_calls": [{
-            "id": tool_call_id,
-            "type": "function",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": json.dumps({"text": text}, ensure_ascii=False),
-            },
-        }],
+        "content": assistant_content,
+        "tool_calls": normalized_tool_calls,
     }
+    if assistant_reasoning:
+        message["reasoning"] = assistant_reasoning
+    elif thinking:
+        if use_reasoning_field and not _looks_like_json_object(thinking):
+            message["reasoning"] = thinking
+        else:
+            message["content"] = thinking
+    return message
+
+
+def _migrate_assistant_reasoning_fields(
+    messages: list[dict[str, Any]],
+    *,
+    use_reasoning_field: bool,
+) -> int:
+    """Move private assistant reasoning from content to reasoning when supported."""
+    if not use_reasoning_field:
+        return 0
+
+    migrated = 0
+    for msg in messages:
+        if msg.get("role") != "assistant" or not msg.get("tool_calls"):
+            continue
+        if msg.get("reasoning") or not msg.get("content"):
+            continue
+        content = msg["content"]
+        if _looks_like_json_object(content):
+            continue
+        msg["reasoning"] = content
+        msg["content"] = None
+        migrated += 1
+    return migrated
 
 
 def _is_restorable_ai_context(ai_messages: Any) -> bool:
@@ -196,6 +262,8 @@ def _is_restorable_ai_context(ai_messages: Any) -> bool:
 def _rebuild_ai_context_from_turns(
     ai_system_prompt: str,
     turns: list[dict[str, Any]],
+    *,
+    use_reasoning_field: bool = False,
 ) -> list[dict[str, Any]]:
     """Rebuild AI-side tool history from saved turns.
 
@@ -217,7 +285,11 @@ def _rebuild_ai_context_from_turns(
                 tool_index += 1
                 last_tool_call_id = f"wmth{tool_index:05d}"
                 ai_messages.append(
-                    _build_ai_tool_message(_INITIAL_AI_GREETING, last_tool_call_id)
+                    _build_ai_tool_message(
+                        _INITIAL_AI_GREETING,
+                        last_tool_call_id,
+                        use_reasoning_field=use_reasoning_field,
+                    )
                 )
             ai_messages.append(make_human_tool_result(text, last_tool_call_id))
             continue
@@ -229,6 +301,10 @@ def _rebuild_ai_context_from_turns(
                 text,
                 last_tool_call_id,
                 thinking=turn.get("ai_thinking"),
+                assistant_content=turn.get("ai_content"),
+                assistant_reasoning=turn.get("ai_reasoning"),
+                tool_calls=turn.get("ai_tool_calls"),
+                use_reasoning_field=use_reasoning_field,
             )
         )
 
@@ -242,6 +318,9 @@ def _turns_to_context_rows(turns: list[ConversationTurn]) -> list[dict[str, Any]
             "speaker": turn.speaker,
             "visible_text": turn.visible_text,
             "ai_thinking": turn.ai_thinking,
+            "ai_content": turn.ai_content,
+            "ai_reasoning": turn.ai_reasoning,
+            "ai_tool_calls": copy.deepcopy(turn.ai_tool_calls),
         }
         for turn in turns
     ]
@@ -294,6 +373,15 @@ def _split_thinking_and_message(text: str) -> tuple[str | None, str | None]:
     return visible, thinking
 
 
+def _format_thinking_markdown(text: str) -> str:
+    """Render multi-line AI thinking as a stable markdown blockquote."""
+    lines = text.splitlines() or [text]
+    formatted = ["> 💭 Thinking:"]
+    for line in lines:
+        formatted.append(f"> {line}" if line else ">")
+    return "\n".join(formatted)
+
+
 class ConversationGenerator:
     """Generates a single conversation between a human simulator and an AI companion."""
 
@@ -309,6 +397,8 @@ class ConversationGenerator:
         language: str = "english",
         companion_mode: str = COMPANION_MODE,
         verbose: bool = False,
+        ai_provider: dict | None = AI_PROVIDER,
+        ai_reasoning: dict | None = AI_REASONING,
     ) -> None:
         self.client = client
         self.human_profile = human_profile
@@ -319,9 +409,14 @@ class ConversationGenerator:
         self.language = language.lower()
         self.companion_mode = companion_mode
         self.verbose = verbose
+        self.ai_provider = ai_provider
+        self.ai_reasoning = ai_reasoning
 
         self._seed_words = generate_seed(5)
-        self._ai_system_prompt = build_ai_system_prompt(self._seed_words, companion_mode=self.companion_mode)
+        self._ai_system_prompt = build_ai_system_prompt(
+            self._seed_words,
+            companion_mode=self.companion_mode,
+        )
         self._conversation_plan: str = ""
 
         # AI context: system + conversation history (tool-role format)
@@ -478,36 +573,26 @@ class ConversationGenerator:
 
     _VALID_FINISH_REASONS = {"stop", "tool_calls", "end_turn"}
 
-    def _get_ai_response(self) -> tuple[str | None, str | None, str | None]:
-        """Call the AI model and extract: (visible_text, thinking, tool_call_id).
-
-        Returns (None, ..., ...) on malformed or truncated responses so the
-        caller's retry logic can kick in.
-        
-        Reasoning/thinking can come from three places (checked in priority order):
-        1. The 'reasoning' parameter inside the tool call arguments
-        2. The message content field (as JSON with a "reasoning" key)
-        3. The message content field (as JSON with a "thoughts" key, for backward compat)
-        """
+    def _get_ai_response(self) -> ParsedAIResponse:
+        """Call the AI model and normalize visible text, private fields, and tool calls."""
         response = self.client.chat(
             model=self.ai_model,
             messages=self._ai_messages,
             max_tokens=AI_MAX_TOKENS,
             temperature=AI_TEMPERATURE,
             tools=AI_TOOLS,
+            provider=self.ai_provider,
+            reasoning=self.ai_reasoning,
         )
 
         fr = (response.finish_reason or "").strip()
         if fr and fr not in self._VALID_FINISH_REASONS:
             console.print(f"[yellow]AI finish_reason: {fr} — retrying[/yellow]")
-            return None, None, None
+            return ParsedAIResponse(None, None, None)
 
-        thinking = response.content
+        assistant_content = response.content
+        assistant_reasoning = response.reasoning
         visible_text, tc_id, tool_reasoning = extract_tool_call_text(response)
-
-        # If reasoning was passed inside tool call args, prefer it
-        if tool_reasoning:
-            thinking = tool_reasoning
 
         if visible_text is not None:
             # Tool call was used — but the model may have put JSON thinking
@@ -515,15 +600,24 @@ class ConversationGenerator:
             if visible_text.strip().startswith("{"):
                 msg_part, json_part = _split_thinking_and_message(visible_text)
                 if json_part:
-                    if not tool_reasoning:
-                        thinking = json_part
+                    if not tool_reasoning and not assistant_reasoning and not assistant_content:
+                        assistant_content = json_part
                     visible_text = msg_part
-        elif thinking:
+        elif assistant_content:
             # No tool call — content has both thinking and message
-            visible_text, thinking = _split_thinking_and_message(thinking)
+            visible_text, assistant_content = _split_thinking_and_message(assistant_content)
             tc_id = None
 
-        return visible_text, thinking, tc_id
+        display_thinking = assistant_reasoning or tool_reasoning or assistant_content
+
+        return ParsedAIResponse(
+            visible_text=visible_text,
+            display_thinking=display_thinking,
+            tool_call_id=tc_id,
+            assistant_content=assistant_content,
+            assistant_reasoning=assistant_reasoning,
+            tool_calls=copy.deepcopy(response.tool_calls),
+        )
 
     def _get_human_response(self) -> str:
         """Call the human simulator model."""
@@ -537,41 +631,32 @@ class ConversationGenerator:
 
     def _add_ai_turn_to_contexts(
         self,
-        visible_text: str,
-        thinking: str | None,
-        tool_call_id: str | None,
+        response: ParsedAIResponse,
     ) -> str:
         """Add an AI turn to both context histories. Returns the tool_call_id used."""
         # For AI context: add as tool call
-        if tool_call_id:
-            ai_msg: dict[str, Any] = {
-                "role": "assistant",
-                "content": thinking,
-                "tool_calls": [{
-                    "id": tool_call_id,
-                    "type": "function",
-                    "function": {
-                        "name": "write_message_to_human",
-                        "arguments": json.dumps({"text": visible_text}, ensure_ascii=False),
-                    },
-                }],
-            }
+        if response.tool_call_id:
+            ai_msg = _build_ai_tool_message(
+                response.visible_text or "",
+                response.tool_call_id,
+                thinking=response.display_thinking,
+                assistant_content=response.assistant_content,
+                assistant_reasoning=response.assistant_reasoning,
+                tool_calls=response.tool_calls,
+                use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
+            )
         else:
             # Fallback: model didn't use tool, wrap it ourselves
             tc_id = next_tool_call_id()
-            ai_msg = {
-                "role": "assistant",
-                "content": thinking,
-                "tool_calls": [{
-                    "id": tc_id,
-                    "type": "function",
-                    "function": {
-                        "name": "write_message_to_human",
-                        "arguments": json.dumps({"text": visible_text}, ensure_ascii=False),
-                    },
-                }],
-            }
-            tool_call_id = tc_id
+            ai_msg = _build_ai_tool_message(
+                response.visible_text or "",
+                tc_id,
+                thinking=response.display_thinking,
+                assistant_content=response.assistant_content,
+                assistant_reasoning=response.assistant_reasoning,
+                use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
+            )
+            response.tool_call_id = tc_id
 
         self._ai_messages.append(ai_msg)
 
@@ -579,11 +664,11 @@ class ConversationGenerator:
         # (the human model sees AI messages as incoming user messages it needs to reply to)
         self._human_messages.append({
             "role": "user",
-            "content": visible_text,
+            "content": response.visible_text,
         })
 
-        self._last_tool_call_id = tool_call_id
-        return tool_call_id
+        self._last_tool_call_id = response.tool_call_id
+        return response.tool_call_id or ""
 
     def _add_human_turn_to_contexts(self, text: str, *, is_first: bool = False) -> None:
         """Add a human turn to both context histories."""
@@ -777,9 +862,9 @@ class ConversationGenerator:
             # AI turn
             turn_number += 1
             cost_before = self.client.total_cost
-            visible_text, thinking, tc_id = self._get_ai_response()
+            ai_response = self._get_ai_response()
 
-            if not visible_text:
+            if not ai_response.visible_text:
                 consecutive_empty += 1
                 wait = min(2 ** consecutive_empty, 16)
                 console.print(f"[yellow]AI produced empty response ({consecutive_empty}/{max_consecutive_empty}), retrying in {wait}s...[/yellow]")
@@ -792,16 +877,23 @@ class ConversationGenerator:
             consecutive_empty = 0
 
             ai_cost = self.client.total_cost - cost_before
-            tc_used = self._add_ai_turn_to_contexts(visible_text, thinking, tc_id)
+            tc_used = self._add_ai_turn_to_contexts(ai_response)
 
-            ai_tokens = _estimate_tokens(visible_text) + _estimate_tokens(thinking or "")
+            ai_tokens = (
+                _estimate_tokens(ai_response.visible_text)
+                + _estimate_tokens(ai_response.assistant_content or "")
+                + _estimate_tokens(ai_response.assistant_reasoning or "")
+            )
             accumulated_tokens += ai_tokens
 
             ai_turn = ConversationTurn(
                 turn_number=turn_number,
                 speaker="ai",
-                visible_text=visible_text,
-                ai_thinking=thinking,
+                visible_text=ai_response.visible_text,
+                ai_thinking=ai_response.display_thinking,
+                ai_content=ai_response.assistant_content,
+                ai_reasoning=ai_response.assistant_reasoning,
+                ai_tool_calls=copy.deepcopy(ai_response.tool_calls),
                 token_estimate=ai_tokens,
                 cost_usd=ai_cost,
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -909,6 +1001,10 @@ class ConversationGenerator:
         console.print(f"\n[bold]Starting conversation with {self.human_profile['name']}[/bold]")
         console.print(f"  AI model: {self.ai_model}")
         console.print(f"  Human model: {self.human_model}")
+        if self.ai_provider:
+            console.print(f"  AI provider: {self.ai_provider}")
+        if self.ai_reasoning:
+            console.print(f"  AI reasoning: {self.ai_reasoning}")
         console.print(f"  Target: ~{self.target_tokens:,} tokens")
         console.print(f"  Seed: {', '.join(self._seed_words)}")
 
@@ -989,11 +1085,24 @@ class ConversationGenerator:
 
         if not _is_restorable_ai_context(ai_messages):
             ai_messages = _rebuild_ai_context_from_turns(
-                build_ai_system_prompt(seed_words, companion_mode=companion_mode),
+                build_ai_system_prompt(
+                    seed_words,
+                    companion_mode=companion_mode,
+                ),
                 turns,
+                use_reasoning_field=_uses_native_reasoning_field(AI_REASONING),
             )
             console.print(
                 "  [dim yellow]Raw AI context missing or incomplete; rebuilt from saved turns.[/dim yellow]"
+            )
+
+        migrated_reasoning = _migrate_assistant_reasoning_fields(
+            ai_messages,
+            use_reasoning_field=_uses_native_reasoning_field(AI_REASONING),
+        )
+        if migrated_reasoning > 0:
+            console.print(
+                f"  [dim]Migrated {migrated_reasoning} assistant messages from content to reasoning.[/dim]"
             )
 
         # Clean up any Unicode-escaped tool arguments from older runs
@@ -1006,6 +1115,10 @@ class ConversationGenerator:
         console.print(f"  Existing turns: {len(turns)}")
         console.print(f"  AI model: {ai_model}")
         console.print(f"  Human model: {human_model}")
+        if AI_PROVIDER:
+            console.print(f"  AI provider: {AI_PROVIDER}")
+        if AI_REASONING:
+            console.print(f"  AI reasoning: {AI_REASONING}")
         console.print(f"  Previous cost: ${previous_cost:.4f}")
         console.print(f"  New target: ~{target_tokens:,} tokens")
         console.print(f"  Seed: {', '.join(seed_words)}")
@@ -1108,6 +1221,9 @@ class ConversationGenerator:
                 speaker=turn_data["speaker"],
                 visible_text=turn_data["visible_text"],
                 ai_thinking=turn_data.get("ai_thinking"),
+                ai_content=turn_data.get("ai_content"),
+                ai_reasoning=turn_data.get("ai_reasoning"),
+                ai_tool_calls=turn_data.get("ai_tool_calls"),
                 token_estimate=turn_data.get("token_estimate", 0),
                 cost_usd=turn_data.get("cost_usd", 0.0),
                 timestamp=turn_data.get("timestamp", ""),
@@ -1160,6 +1276,9 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
                 "speaker": turn.speaker,
                 "visible_text": turn.visible_text,
                 "ai_thinking": turn.ai_thinking,
+                "ai_content": turn.ai_content,
+                "ai_reasoning": turn.ai_reasoning,
+                "ai_tool_calls": turn.ai_tool_calls,
                 "token_estimate": turn.token_estimate,
                 "cost_usd": turn.cost_usd,
                 "timestamp": turn.timestamp,
@@ -1235,15 +1354,19 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
                         f" · 👤 human ctx: ~{turn.human_context_tokens:,} tok*\n\n"
                     )
                 if turn.ai_thinking:
-                    f.write(f"> *💭 Thinking: {turn.ai_thinking}*\n\n")
+                    f.write(f"{_format_thinking_markdown(turn.ai_thinking)}\n\n")
             f.write(f"{turn.visible_text}\n\n")
 
     # Save raw AI messages (for compression testing)
     raw_messages = record.ai_messages_raw
     if not _is_restorable_ai_context(raw_messages) and record.turns:
         raw_messages = _rebuild_ai_context_from_turns(
-            build_ai_system_prompt(record.seed_words, companion_mode=record.companion_mode),
+            build_ai_system_prompt(
+                record.seed_words,
+                companion_mode=record.companion_mode,
+            ),
             _turns_to_context_rows(record.turns),
+            use_reasoning_field=_uses_native_reasoning_field(AI_REASONING),
         )
         record.ai_messages_raw = raw_messages
     if record.turns and record.total_tokens_estimate <= 0:

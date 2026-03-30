@@ -23,6 +23,7 @@ class Usage:
 class LLMResponse:
     content: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
+    reasoning: str | None = None
     usage: Usage = field(default_factory=Usage)
     finish_reason: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
@@ -45,6 +46,8 @@ class OpenRouterClient:
         temperature: float = 0.7,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | dict | None = None,
+        provider: dict[str, Any] | None = None,
+        reasoning: dict[str, Any] | None = None,
     ) -> LLMResponse:
         payload: dict[str, Any] = {
             "model": model,
@@ -56,6 +59,10 @@ class OpenRouterClient:
             payload["tools"] = tools
         if tool_choice:
             payload["tool_choice"] = tool_choice
+        if provider:
+            payload["provider"] = provider
+        if reasoning:
+            payload["reasoning"] = reasoning
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -124,6 +131,7 @@ class OpenRouterClient:
         return LLMResponse(
             content=message.get("content"),
             tool_calls=message.get("tool_calls"),
+            reasoning=message.get("reasoning"),
             usage=usage,
             finish_reason=choice.get("finish_reason", ""),
             raw=data,

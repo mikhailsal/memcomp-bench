@@ -505,9 +505,15 @@ class ConversationGenerator:
         if not recent_turns:
             return
 
-        formatted = "\n".join(
-            f"{t.speaker.upper()}: {t.visible_text}" for t in recent_turns
-        )
+        lines: list[str] = []
+        for t in recent_turns:
+            text = (t.visible_text or "").strip()
+            if not text:
+                continue
+            lines.append(f"{t.speaker.upper()}: {text}")
+        if not lines:
+            return
+        formatted = "\n".join(lines)
         prompt = (
             "You are a conversation topic analyzer. Below are the last messages from a conversation.\n\n"
             f"Previous main topic: {self._current_topic or 'unknown (conversation just started)'}\n\n"

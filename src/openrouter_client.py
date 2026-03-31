@@ -67,7 +67,7 @@ class OpenRouterClient:
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/memcomp-bench",
+            "HTTP-Referer": "https://github.com/mikhailsal/memcomp-bench",
             "X-Title": "memcomp-bench",
         }
 

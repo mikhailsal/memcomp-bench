@@ -54,6 +54,8 @@ from src.prompts import (
 
 console = Console()
 
+_UNSET = object()  # sentinel for "parameter not provided" in resume()
+
 _INITIAL_AI_GREETING = (
     "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, "
     "but I'm glad to meet you."
@@ -130,6 +132,12 @@ class ConversationRecord:
     conversation_plan: str = ""
     language: str = "english"
     companion_mode: str = "supportive"
+    ai_provider: dict | None = None
+    ai_reasoning: dict | None = None
+    ai_temperature: float = AI_TEMPERATURE
+    ai_max_tokens: int = AI_MAX_TOKENS
+    human_temperature: float = HUMAN_TEMPERATURE
+    human_max_tokens: int = HUMAN_MAX_TOKENS
     turns: list[ConversationTurn] = field(default_factory=list)
     total_tokens_estimate: int = 0
     total_cost_usd: float = 0.0
@@ -401,6 +409,10 @@ class ConversationGenerator:
         verbose: bool = False,
         ai_provider: dict | None = AI_PROVIDER,
         ai_reasoning: dict | None = AI_REASONING,
+        ai_temperature: float = AI_TEMPERATURE,
+        ai_max_tokens: int = AI_MAX_TOKENS,
+        human_temperature: float = HUMAN_TEMPERATURE,
+        human_max_tokens: int = HUMAN_MAX_TOKENS,
     ) -> None:
         self.client = client
         self.human_profile = human_profile
@@ -413,6 +425,10 @@ class ConversationGenerator:
         self.verbose = verbose
         self.ai_provider = ai_provider
         self.ai_reasoning = ai_reasoning
+        self.ai_temperature = ai_temperature
+        self.ai_max_tokens = ai_max_tokens
+        self.human_temperature = human_temperature
+        self.human_max_tokens = human_max_tokens
 
         self._seed_words = generate_seed(5)
         self._ai_system_prompt = build_ai_system_prompt(
@@ -441,6 +457,12 @@ class ConversationGenerator:
             seed_words=self._seed_words,
             language=self.language,
             companion_mode=self.companion_mode,
+            ai_provider=ai_provider,
+            ai_reasoning=ai_reasoning,
+            ai_temperature=ai_temperature,
+            ai_max_tokens=ai_max_tokens,
+            human_temperature=human_temperature,
+            human_max_tokens=human_max_tokens,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -586,8 +608,8 @@ class ConversationGenerator:
         response = self.client.chat(
             model=self.ai_model,
             messages=self._ai_messages,
-            max_tokens=AI_MAX_TOKENS,
-            temperature=AI_TEMPERATURE,
+            max_tokens=self.ai_max_tokens,
+            temperature=self.ai_temperature,
             tools=AI_TOOLS,
             provider=self.ai_provider,
             reasoning=self.ai_reasoning,
@@ -632,8 +654,8 @@ class ConversationGenerator:
         response = self.client.chat(
             model=self.human_model,
             messages=self._human_messages,
-            max_tokens=HUMAN_MAX_TOKENS,
-            temperature=HUMAN_TEMPERATURE,
+            max_tokens=self.human_max_tokens,
+            temperature=self.human_temperature,
         )
         return response.content or "", response.reasoning, response.reasoning_details
 
@@ -1083,6 +1105,7 @@ class ConversationGenerator:
         language_override: str | None = None,
         ai_model_override: str | None = None,
         human_model_override: str | None = None,
+        ai_provider_override: object = _UNSET,
     ) -> ConversationRecord:
         """Resume a conversation from a saved JSONL file."""
         jsonl_path = Path(jsonl_path)
@@ -1109,6 +1132,16 @@ class ConversationGenerator:
         conversation_plan = metadata.get("conversation_plan", "")
         language = language_override or metadata.get("language", "english")
         companion_mode = metadata.get("companion_mode", "supportive")
+        # Restore saved provider; fall back to current AI_PROVIDER for old files
+        # that pre-date this field. Override wins if explicitly passed.
+        saved_ai_provider = metadata.get("ai_provider", AI_PROVIDER)
+        ai_provider = ai_provider_override if ai_provider_override is not _UNSET else saved_ai_provider
+        # Restore inference params; fall back to current config values for old files.
+        ai_reasoning = metadata.get("ai_reasoning", AI_REASONING)
+        ai_temperature = metadata.get("ai_temperature", AI_TEMPERATURE)
+        ai_max_tokens = metadata.get("ai_max_tokens", AI_MAX_TOKENS)
+        human_temperature = metadata.get("human_temperature", HUMAN_TEMPERATURE)
+        human_max_tokens = metadata.get("human_max_tokens", HUMAN_MAX_TOKENS)
         previous_cost = metadata.get("total_cost_usd", 0.0)
 
         # Load raw AI context
@@ -1122,7 +1155,7 @@ class ConversationGenerator:
                     companion_mode=companion_mode,
                 ),
                 turns,
-                use_reasoning_field=_uses_native_reasoning_field(AI_REASONING),
+                use_reasoning_field=_uses_native_reasoning_field(ai_reasoning),
             )
             console.print(
                 "  [dim yellow]Raw AI context missing or incomplete; rebuilt from saved turns.[/dim yellow]"
@@ -1130,7 +1163,7 @@ class ConversationGenerator:
 
         migrated_reasoning = _migrate_assistant_reasoning_fields(
             ai_messages,
-            use_reasoning_field=_uses_native_reasoning_field(AI_REASONING),
+            use_reasoning_field=_uses_native_reasoning_field(ai_reasoning),
         )
         if migrated_reasoning > 0:
             console.print(
@@ -1147,10 +1180,12 @@ class ConversationGenerator:
         console.print(f"  Existing turns: {len(turns)}")
         console.print(f"  AI model: {ai_model}" + (" [yellow](overridden)[/yellow]" if ai_model_override else ""))
         console.print(f"  Human model: {human_model}" + (" [yellow](overridden)[/yellow]" if human_model_override else ""))
-        if AI_PROVIDER:
-            console.print(f"  AI provider: {AI_PROVIDER}")
-        if AI_REASONING:
-            console.print(f"  AI reasoning: {AI_REASONING}")
+        if ai_provider:
+            overridden = ai_provider_override is not _UNSET
+            console.print(f"  AI provider: {ai_provider}" + (" [yellow](overridden)[/yellow]" if overridden else ""))
+        if ai_reasoning:
+            console.print(f"  AI reasoning: {ai_reasoning}")
+        console.print(f"  AI temperature: {ai_temperature} / Human temperature: {human_temperature}")
         console.print(f"  Previous cost: ${previous_cost:.4f}")
         console.print(f"  New target: ~{target_tokens:,} tokens")
         console.print(f"  Seed: {', '.join(seed_words)}")
@@ -1184,6 +1219,12 @@ class ConversationGenerator:
             language=language,
             companion_mode=companion_mode,
             verbose=verbose,
+            ai_provider=ai_provider,
+            ai_reasoning=ai_reasoning,
+            ai_temperature=ai_temperature,
+            ai_max_tokens=ai_max_tokens,
+            human_temperature=human_temperature,
+            human_max_tokens=human_max_tokens,
         )
 
         # Restore cost from previous runs
@@ -1301,6 +1342,12 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
             "conversation_plan": record.conversation_plan,
             "language": record.language,
             "companion_mode": record.companion_mode,
+            "ai_provider": record.ai_provider,
+            "ai_reasoning": record.ai_reasoning,
+            "ai_temperature": record.ai_temperature,
+            "ai_max_tokens": record.ai_max_tokens,
+            "human_temperature": record.human_temperature,
+            "human_max_tokens": record.human_max_tokens,
             "total_turns": len(record.turns),
             "total_tokens_estimate": record.total_tokens_estimate,
             "total_cost_usd": record.total_cost_usd,

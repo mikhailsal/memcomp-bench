@@ -17,7 +17,7 @@ from src.config import (
     ensure_dirs,
     load_api_key,
 )
-from src.generator import ConversationGenerator, save_conversation, _estimate_context_tokens
+from src.generator import ConversationGenerator, save_conversation, _estimate_context_tokens, _UNSET
 from src.openrouter_client import OpenRouterClient
 from src.prompts import HUMAN_PROFILES, get_human_profile
 
@@ -55,10 +55,10 @@ def cmd_generate(args: argparse.Namespace) -> None:
     human_model = args.human_model or HUMAN_MODEL
     target = args.target_tokens or TARGET_TOKENS
 
-    # Provider override: CLI --provider sets only=[slug], no fallbacks
+    # Provider override: None = use config default; "" = clear; slug = lock to that provider
     ai_provider = AI_PROVIDER
-    if args.provider:
-        ai_provider = {"only": [args.provider], "allow_fallbacks": False}
+    if args.provider is not None:
+        ai_provider = {"only": [args.provider], "allow_fallbacks": False} if args.provider else None
 
     generator = ConversationGenerator(
         client,
@@ -110,6 +110,11 @@ def cmd_resume(args: argparse.Namespace) -> None:
             language_override=args.language,
             ai_model_override=args.ai_model or None,
             human_model_override=args.human_model or None,
+            # None = not specified (use saved); "" = clear; slug = lock to that provider
+            ai_provider_override=(
+                _UNSET if args.provider is None
+                else ({"only": [args.provider], "allow_fallbacks": False} if args.provider else None)
+            ),
         )
         save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
@@ -179,6 +184,10 @@ def main() -> None:
     res.add_argument(
         "--language", type=str, default=None,
         help="Override language (normally loaded from saved conversation)",
+    )
+    res.add_argument(
+        "--provider", type=str, default=None,
+        help="Override AI provider slug (e.g. 'minimax'). Normally loaded from saved conversation.",
     )
     res.add_argument(
         "--ai-model", type=str, default=None,

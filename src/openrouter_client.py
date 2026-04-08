@@ -116,7 +116,14 @@ class OpenRouterClient:
         message = choice.get("message", {})
         usage_raw = data.get("usage", {})
 
-        cost = float(usage_raw.get("cost", 0.0))
+        cost_raw = float(usage_raw.get("cost") or 0.0)
+        cost_details = usage_raw.get("cost_details") or {}
+        if usage_raw.get("is_byok") and cost_details.get("upstream_inference_cost"):
+            # BYOK: `cost` is only the router fee; add the actual inference cost
+            cost = cost_raw + float(cost_details["upstream_inference_cost"])
+        else:
+            # Non-BYOK or missing details: use `cost`, fall back to `market_cost`
+            cost = cost_raw or float(usage_raw.get("market_cost") or 0.0)
 
         usage = Usage(
             prompt_tokens=usage_raw.get("prompt_tokens", 0),

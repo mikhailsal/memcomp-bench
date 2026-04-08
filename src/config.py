@@ -43,7 +43,7 @@ COMPANION_MODE = "honest"
 
 # Topic judge model — set explicitly (not tied to AI_MODEL)
 JUDGE_MODEL = "google/gemini-3.1-flash-lite-preview"
-JUDGE_MAX_TOKENS = 80
+JUDGE_MAX_TOKENS = 200
 TOPIC_CHECK_INTERVAL = 20  # Check topic every N turns
 
 # Conversation parameters

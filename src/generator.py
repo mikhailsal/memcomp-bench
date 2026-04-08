@@ -383,13 +383,97 @@ def _split_thinking_and_message(text: str) -> tuple[str | None, str | None]:
     return visible, thinking
 
 
-def _format_thinking_markdown(text: str) -> str:
+def _format_thinking_markdown(text: str, label: str = "💭 Thinking:") -> str:
     """Render multi-line AI thinking as a stable markdown blockquote."""
     lines = text.splitlines() or [text]
-    formatted = ["> 💭 Thinking:"]
+    formatted = [f"> {label}"]
     for line in lines:
         formatted.append(f"> {line}" if line else ">")
     return "\n".join(formatted)
+
+
+def _extract_tool_call_reasoning(turn: ConversationTurn) -> str | None:
+    """Extract the reasoning argument from the write_message_to_human tool call, if present."""
+    if not turn.ai_tool_calls:
+        return None
+    for tc in turn.ai_tool_calls:
+        func = tc.get("function", {})
+        if func.get("name") == "write_message_to_human":
+            try:
+                args = json.loads(func.get("arguments", "{}"))
+                return args.get("reasoning") or None
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return None
+
+
+def _write_conversation_markdown(f: Any, record: ConversationRecord) -> None:
+    """Write the human-readable markdown for a conversation to an open file handle."""
+    f.write(f"# Conversation: {record.human_profile['name']} & AI\n\n")
+    f.write(f"- **AI model**: {record.ai_model}\n")
+    f.write(f"- **Human model**: {record.human_model}\n")
+    f.write(f"- **Turns**: {len(record.turns)}\n")
+    f.write(f"- **Tokens (est.)**: {record.total_tokens_estimate:,}\n")
+    f.write(f"- **Cost**: ${record.total_cost_usd:.4f}\n")
+    f.write(f"- **Seed**: {', '.join(record.seed_words)}\n")
+    f.write(f"- **Started**: {record.started_at}\n")
+    f.write(f"- **Finished**: {record.finished_at}\n\n")
+    f.write("## Human Profile\n\n")
+    f.write(f"**{record.human_profile['name']}**: {record.human_profile['backstory']}\n\n")
+    if record.conversation_plan:
+        f.write("## Conversation Plan\n\n")
+        f.write(f"{record.conversation_plan}\n\n")
+    if record.events:
+        f.write("## System Events\n\n")
+        for event in record.events:
+            parts = [f"turn {event.turn_number}", f"{event.event_type} ({event.source})"]
+            if event.current_topic:
+                parts.append(f"topic={event.current_topic}")
+            if event.topic_changed is not None:
+                parts.append(f"changed={event.topic_changed}")
+            if event.nudge_injected is not None:
+                parts.append(f"nudge_injected={event.nudge_injected}")
+            if event.suppression_reason:
+                parts.append(f"suppressed={event.suppression_reason}")
+            f.write(f"- {' · '.join(parts)}\n")
+            if event.message:
+                f.write(f"  - note: {event.message}\n")
+        f.write("\n")
+    f.write("---\n\n")
+
+    for turn in record.turns:
+        if turn.speaker == "human":
+            f.write(f"### 👤 {record.human_profile['name']} (turn {turn.turn_number})\n\n")
+            if turn.human_context_tokens or turn.ai_context_tokens:
+                f.write(
+                    f"*👤 human ctx: ~{turn.human_context_tokens:,} tok"
+                    f" · 🧠 AI ctx: ~{turn.ai_context_tokens:,} tok*\n\n"
+                )
+            if turn.human_reasoning:
+                f.write(f"{_format_thinking_markdown(turn.human_reasoning)}\n\n")
+        else:
+            f.write(f"### 🤖 AI (turn {turn.turn_number})\n\n")
+            if turn.ai_context_tokens or turn.human_context_tokens:
+                f.write(
+                    f"*🧠 AI ctx: ~{turn.ai_context_tokens:,} tok"
+                    f" · 👤 human ctx: ~{turn.human_context_tokens:,} tok*\n\n"
+                )
+            native = turn.ai_reasoning
+            tool_inner = _extract_tool_call_reasoning(turn)
+            inline = turn.ai_content
+            shown_any = False
+            if native:
+                f.write(f"{_format_thinking_markdown(native, '🧠 Native reasoning:')}\n\n")
+                shown_any = True
+            if tool_inner and tool_inner != native:
+                f.write(f"{_format_thinking_markdown(tool_inner, '💭 Inner monologue:')}\n\n")
+                shown_any = True
+            if inline and inline not in (native, tool_inner):
+                f.write(f"{_format_thinking_markdown(inline, '📋 Response draft:')}\n\n")
+                shown_any = True
+            if not shown_any and turn.ai_thinking:
+                f.write(f"{_format_thinking_markdown(turn.ai_thinking)}\n\n")
+        f.write(f"{turn.visible_text}\n\n")
 
 
 class ConversationGenerator:
@@ -771,7 +855,38 @@ class ConversationGenerator:
                 )
             )
         else:
-            if turn.ai_thinking:
+            native = turn.ai_reasoning
+            tool_inner = _extract_tool_call_reasoning(turn)
+            inline = turn.ai_content
+            shown_any = False
+            if native:
+                console.print()
+                console.print(Panel(
+                    native,
+                    title=f"🧠 Native reasoning  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="dim yellow",
+                    padding=(0, 1),
+                ))
+                shown_any = True
+            if tool_inner and tool_inner != native:
+                console.print()
+                console.print(Panel(
+                    tool_inner,
+                    title=f"💭 Inner monologue  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="dim magenta",
+                    padding=(0, 1),
+                ))
+                shown_any = True
+            if inline and inline not in (native, tool_inner):
+                console.print()
+                console.print(Panel(
+                    inline,
+                    title=f"📋 Response draft  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="dim cyan",
+                    padding=(0, 1),
+                ))
+                shown_any = True
+            if not shown_any and turn.ai_thinking:
                 thinking_display = turn.ai_thinking
                 try:
                     parsed = json.loads(turn.ai_thinking)
@@ -783,22 +898,18 @@ class ConversationGenerator:
                 except (json.JSONDecodeError, AttributeError):
                     pass
                 console.print()
-                console.print(
-                    Panel(
-                        thinking_display,
-                        title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
-                        border_style="dim yellow",
-                        padding=(0, 1),
-                    )
-                )
-            console.print(
-                Panel(
-                    turn.visible_text,
-                    title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
-                    border_style="green",
+                console.print(Panel(
+                    thinking_display,
+                    title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="dim yellow",
                     padding=(0, 1),
-                )
-            )
+                ))
+            console.print(Panel(
+                turn.visible_text,
+                title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
+                border_style="green",
+                padding=(0, 1),
+            ))
 
     def _generate_conversation_plan(self) -> str:
         """Generate the human's conversation plan before starting the dialogue."""
@@ -1322,6 +1433,91 @@ class ConversationGenerator:
         return gen._run_loop(start_turn=last_turn, start_tokens=existing_tokens)
 
 
+def load_conversation_record(jsonl_path: Path) -> ConversationRecord:
+    """Load a ConversationRecord from a saved JSONL file."""
+    turns: list[ConversationTurn] = []
+    events: list[ConversationEvent] = []
+    meta: dict[str, Any] = {}
+
+    with open(jsonl_path, encoding="utf-8") as f:
+        for raw in f:
+            raw = raw.strip()
+            if not raw:
+                continue
+            obj = json.loads(raw)
+            t = obj.get("type")
+            if t == "metadata":
+                meta = obj
+            elif t == "turn":
+                turns.append(ConversationTurn(
+                    turn_number=obj["turn_number"],
+                    speaker=obj["speaker"],
+                    visible_text=obj["visible_text"],
+                    ai_thinking=obj.get("ai_thinking"),
+                    ai_content=obj.get("ai_content"),
+                    ai_reasoning=obj.get("ai_reasoning"),
+                    ai_tool_calls=obj.get("ai_tool_calls"),
+                    human_reasoning=obj.get("human_reasoning"),
+                    human_reasoning_details=obj.get("human_reasoning_details"),
+                    token_estimate=obj.get("token_estimate", 0),
+                    cost_usd=obj.get("cost_usd", 0.0),
+                    timestamp=obj.get("timestamp", ""),
+                    ai_context_tokens=obj.get("ai_context_tokens", 0),
+                    human_context_tokens=obj.get("human_context_tokens", 0),
+                ))
+            elif t == "event":
+                events.append(ConversationEvent(
+                    event_type=obj["event_type"],
+                    turn_number=obj["turn_number"],
+                    source=obj["source"],
+                    timestamp=obj.get("timestamp", ""),
+                    message=obj.get("message"),
+                    previous_topic=obj.get("previous_topic"),
+                    current_topic=obj.get("current_topic"),
+                    topic_changed=obj.get("topic_changed"),
+                    nudge_injected=obj.get("nudge_injected"),
+                    suppression_reason=obj.get("suppression_reason"),
+                ))
+
+    record = ConversationRecord(
+        id=meta.get("conversation_id", ""),
+        human_profile=meta.get("human_profile", {}),
+        ai_model=meta.get("ai_model", ""),
+        human_model=meta.get("human_model", ""),
+        seed_words=meta.get("seed_words", []),
+        conversation_plan=meta.get("conversation_plan", ""),
+        language=meta.get("language", "english"),
+        companion_mode=meta.get("companion_mode", "honest"),
+        ai_provider=meta.get("ai_provider"),
+        ai_reasoning=meta.get("ai_reasoning"),
+        ai_temperature=meta.get("ai_temperature", AI_TEMPERATURE),
+        ai_max_tokens=meta.get("ai_max_tokens", AI_MAX_TOKENS),
+        human_temperature=meta.get("human_temperature", HUMAN_TEMPERATURE),
+        human_max_tokens=meta.get("human_max_tokens", HUMAN_MAX_TOKENS),
+        total_tokens_estimate=meta.get("total_tokens_estimate", 0),
+        total_cost_usd=meta.get("total_cost_usd", 0.0),
+        started_at=meta.get("started_at", ""),
+        finished_at=meta.get("finished_at", ""),
+    )
+    record.turns = turns
+    record.events = events
+    return record
+
+
+def reformat_markdown(jsonl_path: Path) -> Path:
+    """Rewrite the .md file for an existing conversation using the current render format.
+
+    Loads the record from *jsonl_path* and rewrites the companion ``.md`` file
+    in-place, applying updated rendering (e.g. multi-source reasoning labels).
+    Returns the path of the updated markdown file.
+    """
+    record = load_conversation_record(jsonl_path)
+    md_path = jsonl_path.with_suffix(".md")
+    with open(md_path, "w", encoding="utf-8") as f:
+        _write_conversation_markdown(f, record)
+    return md_path
+
+
 def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
     """Save a conversation record to JSONL and a readable markdown file."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1396,58 +1592,7 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
     # Save readable markdown
     md_path = output_dir / f"{base}.md"
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write(f"# Conversation: {record.human_profile['name']} & AI\n\n")
-        f.write(f"- **AI model**: {record.ai_model}\n")
-        f.write(f"- **Human model**: {record.human_model}\n")
-        f.write(f"- **Turns**: {len(record.turns)}\n")
-        f.write(f"- **Tokens (est.)**: {record.total_tokens_estimate:,}\n")
-        f.write(f"- **Cost**: ${record.total_cost_usd:.4f}\n")
-        f.write(f"- **Seed**: {', '.join(record.seed_words)}\n")
-        f.write(f"- **Started**: {record.started_at}\n")
-        f.write(f"- **Finished**: {record.finished_at}\n\n")
-        f.write(f"## Human Profile\n\n")
-        f.write(f"**{record.human_profile['name']}**: {record.human_profile['backstory']}\n\n")
-        if record.conversation_plan:
-            f.write(f"## Conversation Plan\n\n")
-            f.write(f"{record.conversation_plan}\n\n")
-        if record.events:
-            f.write("## System Events\n\n")
-            for event in record.events:
-                parts = [f"turn {event.turn_number}", f"{event.event_type} ({event.source})"]
-                if event.current_topic:
-                    parts.append(f"topic={event.current_topic}")
-                if event.topic_changed is not None:
-                    parts.append(f"changed={event.topic_changed}")
-                if event.nudge_injected is not None:
-                    parts.append(f"nudge_injected={event.nudge_injected}")
-                if event.suppression_reason:
-                    parts.append(f"suppressed={event.suppression_reason}")
-                f.write(f"- {' · '.join(parts)}\n")
-                if event.message:
-                    f.write(f"  - note: {event.message}\n")
-            f.write("\n")
-        f.write("---\n\n")
-
-        for turn in record.turns:
-            if turn.speaker == "human":
-                f.write(f"### 👤 {record.human_profile['name']} (turn {turn.turn_number})\n\n")
-                if turn.human_context_tokens or turn.ai_context_tokens:
-                    f.write(
-                        f"*👤 human ctx: ~{turn.human_context_tokens:,} tok"
-                        f" · 🧠 AI ctx: ~{turn.ai_context_tokens:,} tok*\n\n"
-                    )
-                if turn.human_reasoning:
-                    f.write(f"{_format_thinking_markdown(turn.human_reasoning)}\n\n")
-            else:
-                f.write(f"### 🤖 AI (turn {turn.turn_number})\n\n")
-                if turn.ai_context_tokens or turn.human_context_tokens:
-                    f.write(
-                        f"*🧠 AI ctx: ~{turn.ai_context_tokens:,} tok"
-                        f" · 👤 human ctx: ~{turn.human_context_tokens:,} tok*\n\n"
-                    )
-                if turn.ai_thinking:
-                    f.write(f"{_format_thinking_markdown(turn.ai_thinking)}\n\n")
-            f.write(f"{turn.visible_text}\n\n")
+        _write_conversation_markdown(f, record)
 
     # Save raw AI messages (for compression testing)
     raw_messages = record.ai_messages_raw

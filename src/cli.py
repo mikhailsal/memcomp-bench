@@ -17,7 +17,7 @@ from src.config import (
     ensure_dirs,
     load_api_key,
 )
-from src.generator import ConversationGenerator, save_conversation, _estimate_context_tokens, _UNSET
+from src.generator import ConversationGenerator, save_conversation, reformat_markdown, _estimate_context_tokens, _UNSET
 from src.openrouter_client import OpenRouterClient
 from src.prompts import HUMAN_PROFILES, get_human_profile
 
@@ -126,6 +126,13 @@ def cmd_resume(args: argparse.Namespace) -> None:
         client.close()
 
 
+def cmd_reformat(args: argparse.Namespace) -> None:
+    """Reformat the markdown file for an existing conversation."""
+    from pathlib import Path
+    md_path = reformat_markdown(Path(args.file))
+    console.print(f"[bold]Reformatted:[/bold] {md_path}")
+
+
 def cmd_list_profiles(args: argparse.Namespace) -> None:
     """List available human profiles."""
     for i, profile in enumerate(HUMAN_PROFILES):
@@ -202,6 +209,11 @@ def main() -> None:
         help="Show full messages and AI thinking in real time",
     )
     res.set_defaults(func=cmd_resume)
+
+    # reformat
+    fmt = sub.add_parser("reformat", help="Reformat the markdown file for an existing conversation")
+    fmt.add_argument("file", type=str, help="Path to the .jsonl conversation file")
+    fmt.set_defaults(func=cmd_reformat)
 
     # profiles
     profiles = sub.add_parser("profiles", help="List human profiles")

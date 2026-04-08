@@ -85,6 +85,7 @@ class ConversationTurn:
     ai_reasoning: str | None = None
     ai_tool_calls: list[dict[str, Any]] | None = None
     human_reasoning: str | None = None
+    human_reasoning_details: list[dict[str, Any]] | None = None
     token_estimate: int = 0
     cost_usd: float = 0.0
     timestamp: str = ""
@@ -626,15 +627,15 @@ class ConversationGenerator:
             tool_calls=copy.deepcopy(response.tool_calls),
         )
 
-    def _get_human_response(self) -> tuple[str, str | None]:
-        """Call the human simulator model. Returns (content, reasoning)."""
+    def _get_human_response(self) -> tuple[str, str | None, list[dict[str, Any]] | None]:
+        """Call the human simulator model. Returns (content, reasoning, reasoning_details)."""
         response = self.client.chat(
             model=self.human_model,
             messages=self._human_messages,
             max_tokens=HUMAN_MAX_TOKENS,
             temperature=HUMAN_TEMPERATURE,
         )
-        return response.content or "", response.reasoning
+        return response.content or "", response.reasoning, response.reasoning_details
 
     def _add_ai_turn_to_contexts(
         self,
@@ -683,6 +684,7 @@ class ConversationGenerator:
         *,
         is_first: bool = False,
         reasoning: str | None = None,
+        reasoning_details: list[dict[str, Any]] | None = None,
     ) -> None:
         """Add a human turn to both context histories."""
         # For AI context: add as tool result
@@ -706,6 +708,8 @@ class ConversationGenerator:
         }
         if reasoning:
             human_msg["reasoning"] = reasoning
+        if reasoning_details:
+            human_msg["reasoning_details"] = reasoning_details
         self._human_messages.append(human_msg)
 
     def _log_turn(self, turn: ConversationTurn) -> None:
@@ -840,7 +844,7 @@ class ConversationGenerator:
             # Human's turn — AI already spoke last
             turn_number += 1
             cost_before = self.client.total_cost
-            human_text, human_reasoning = self._get_human_response()
+            human_text, human_reasoning, human_reasoning_details = self._get_human_response()
             human_cost = self.client.total_cost - cost_before
 
             if not human_text or not human_text.strip():
@@ -850,14 +854,15 @@ class ConversationGenerator:
                     "role": "user",
                     "content": "(The AI just said something. Please respond naturally.)",
                 })
-                human_text, human_reasoning = self._get_human_response()
+                human_text, human_reasoning, human_reasoning_details = self._get_human_response()
                 self._human_messages.pop(-1)
                 if not human_text or not human_text.strip():
                     human_text = "hmm interesting, tell me more"
                     human_reasoning = None
+                    human_reasoning_details = None
             consecutive_empty = 0
 
-            self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning)
+            self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
 
             human_tokens = _estimate_tokens(human_text)
             accumulated_tokens += human_tokens
@@ -867,6 +872,7 @@ class ConversationGenerator:
                 speaker="human",
                 visible_text=human_text,
                 human_reasoning=human_reasoning,
+                human_reasoning_details=human_reasoning_details,
                 token_estimate=human_tokens,
                 cost_usd=human_cost,
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -957,7 +963,7 @@ class ConversationGenerator:
             # Human turn
             turn_number += 1
             cost_before = self.client.total_cost
-            human_text, human_reasoning = self._get_human_response()
+            human_text, human_reasoning, human_reasoning_details = self._get_human_response()
             human_cost = self.client.total_cost - cost_before
 
             if not human_text or not human_text.strip():
@@ -973,7 +979,7 @@ class ConversationGenerator:
                     "role": "user",
                     "content": "(The AI just said something. Please respond naturally as yourself — share your thoughts, tell a story, bring up a new topic, or react to what they said.)",
                 })
-                human_text, human_reasoning = self._get_human_response()
+                human_text, human_reasoning, human_reasoning_details = self._get_human_response()
                 self._human_messages.pop(-1)
                 if not human_text or not human_text.strip():
                     console.print("[yellow]Human still empty, skipping turn[/yellow]")
@@ -981,7 +987,7 @@ class ConversationGenerator:
                     continue
             consecutive_empty = 0
 
-            self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning)
+            self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
 
             human_tokens = _estimate_tokens(human_text)
             accumulated_tokens += human_tokens
@@ -991,6 +997,7 @@ class ConversationGenerator:
                 speaker="human",
                 visible_text=human_text,
                 human_reasoning=human_reasoning,
+                human_reasoning_details=human_reasoning_details,
                 token_estimate=human_tokens,
                 cost_usd=human_cost,
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -1035,15 +1042,16 @@ class ConversationGenerator:
         # --- Turn 0: Human opens the conversation ---
         turn_number = 1
         cost_before = self.client.total_cost
-        human_text, human_reasoning = self._get_human_response()
+        human_text, human_reasoning, human_reasoning_details = self._get_human_response()
         human_cost = self.client.total_cost - cost_before
 
         if not human_text or not human_text.strip():
             console.print("[yellow]Human produced empty first response, using fallback[/yellow]")
             human_text = f"Hey there! I'm {self.human_profile['name']}. Just wanted to say hi and see how you're doing. I'm really curious to get to know you."
             human_reasoning = None
+            human_reasoning_details = None
 
-        self._add_human_turn_to_contexts(human_text, is_first=True, reasoning=human_reasoning)
+        self._add_human_turn_to_contexts(human_text, is_first=True, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
 
         human_tokens = _estimate_tokens(human_text)
 
@@ -1052,6 +1060,7 @@ class ConversationGenerator:
             speaker="human",
             visible_text=human_text,
             human_reasoning=human_reasoning,
+            human_reasoning_details=human_reasoning_details,
             token_estimate=human_tokens,
             cost_usd=human_cost,
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -1216,6 +1225,9 @@ class ConversationGenerator:
                 h_reasoning = turn_data.get("human_reasoning")
                 if h_reasoning:
                     human_msg["reasoning"] = h_reasoning
+                h_reasoning_details = turn_data.get("human_reasoning_details")
+                if h_reasoning_details:
+                    human_msg["reasoning_details"] = h_reasoning_details
                 gen._human_messages.append(human_msg)
             else:
                 gen._human_messages.append({"role": "user", "content": text})
@@ -1252,6 +1264,7 @@ class ConversationGenerator:
                 ai_reasoning=turn_data.get("ai_reasoning"),
                 ai_tool_calls=turn_data.get("ai_tool_calls"),
                 human_reasoning=turn_data.get("human_reasoning"),
+                human_reasoning_details=turn_data.get("human_reasoning_details"),
                 token_estimate=turn_data.get("token_estimate", 0),
                 cost_usd=turn_data.get("cost_usd", 0.0),
                 timestamp=turn_data.get("timestamp", ""),
@@ -1308,6 +1321,7 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
                 "ai_reasoning": turn.ai_reasoning,
                 "ai_tool_calls": turn.ai_tool_calls,
                 "human_reasoning": turn.human_reasoning,
+                "human_reasoning_details": turn.human_reasoning_details,
                 "token_estimate": turn.token_estimate,
                 "cost_usd": turn.cost_usd,
                 "timestamp": turn.timestamp,

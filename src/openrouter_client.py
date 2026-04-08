@@ -24,6 +24,7 @@ class LLMResponse:
     content: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
     reasoning: str | None = None
+    reasoning_details: list[dict[str, Any]] | None = None
     usage: Usage = field(default_factory=Usage)
     finish_reason: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
@@ -132,6 +133,7 @@ class OpenRouterClient:
             content=message.get("content"),
             tool_calls=message.get("tool_calls"),
             reasoning=message.get("reasoning"),
+            reasoning_details=message.get("reasoning_details") or None,
             usage=usage,
             finish_reason=choice.get("finish_reason", ""),
             raw=data,

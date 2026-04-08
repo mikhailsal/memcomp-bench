@@ -1072,6 +1072,8 @@ class ConversationGenerator:
         target_tokens: int = TARGET_TOKENS,
         verbose: bool = False,
         language_override: str | None = None,
+        ai_model_override: str | None = None,
+        human_model_override: str | None = None,
     ) -> ConversationRecord:
         """Resume a conversation from a saved JSONL file."""
         jsonl_path = Path(jsonl_path)
@@ -1092,8 +1094,8 @@ class ConversationGenerator:
         events = [l for l in lines[1:] if l.get("type") == "event"]
 
         profile = metadata["human_profile"]
-        ai_model = metadata["ai_model"]
-        human_model = metadata["human_model"]
+        ai_model = ai_model_override or metadata["ai_model"]
+        human_model = human_model_override or metadata["human_model"]
         seed_words = metadata.get("seed_words", [])
         conversation_plan = metadata.get("conversation_plan", "")
         language = language_override or metadata.get("language", "english")
@@ -1134,8 +1136,8 @@ class ConversationGenerator:
         console.print(f"\n[bold]Resuming conversation with {profile['name']}[/bold]")
         console.print(f"  From: {jsonl_path.name}")
         console.print(f"  Existing turns: {len(turns)}")
-        console.print(f"  AI model: {ai_model}")
-        console.print(f"  Human model: {human_model}")
+        console.print(f"  AI model: {ai_model}" + (" [yellow](overridden)[/yellow]" if ai_model_override else ""))
+        console.print(f"  Human model: {human_model}" + (" [yellow](overridden)[/yellow]" if human_model_override else ""))
         if AI_PROVIDER:
             console.print(f"  AI provider: {AI_PROVIDER}")
         if AI_REASONING:

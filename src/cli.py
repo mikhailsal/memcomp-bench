@@ -108,6 +108,8 @@ def cmd_resume(args: argparse.Namespace) -> None:
             target_tokens=target,
             verbose=args.verbose,
             language_override=args.language,
+            ai_model_override=args.ai_model or None,
+            human_model_override=args.human_model or None,
         )
         save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
@@ -177,6 +179,14 @@ def main() -> None:
     res.add_argument(
         "--language", type=str, default=None,
         help="Override language (normally loaded from saved conversation)",
+    )
+    res.add_argument(
+        "--ai-model", type=str, default=None,
+        help="Override AI model (default: use model from saved conversation)",
+    )
+    res.add_argument(
+        "--human-model", type=str, default=None,
+        help="Override human simulator model (default: use model from saved conversation)",
     )
     res.add_argument(
         "-v", "--verbose", action="store_true",

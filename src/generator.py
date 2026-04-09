@@ -524,7 +524,10 @@ class ConversationGenerator:
         # AI context: system + conversation history (tool-role format)
         self._ai_messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._ai_system_prompt},
-            {"role": "user", "content": "[start]"},
+            {"role": "user", "content": (
+                "Say hello to the human. Use write_message_to_human "
+                "with a single brief greeting — one or two words."
+            )},
         ]
 
         # Human messages will be initialized after plan generation
@@ -1164,7 +1167,44 @@ class ConversationGenerator:
         self._init_human_context()
         console.print()
 
-        # --- Turn 0: Human opens the conversation ---
+        # --- Bootstrap: AI sends its real first greeting ---
+        console.print("  [dim]Getting AI initial greeting...[/dim]")
+        ai_greeting: ParsedAIResponse | None = None
+        for _attempt in range(5):
+            resp = self._get_ai_response()
+            if resp.visible_text and resp.tool_call_id:
+                ai_greeting = resp
+                break
+            wait = min(2 ** (_attempt + 1), 16)
+            reason = resp.rejection_reason or "empty response"
+            console.print(
+                f"  [yellow]AI greeting attempt {_attempt + 1}/5 failed ({reason}), "
+                f"retrying in {wait}s...[/yellow]"
+            )
+            time.sleep(wait)
+
+        if ai_greeting is not None:
+            # Add the real greeting to AI context only — the human simulator
+            # responds to its own trigger prompt, so the greeting must NOT be
+            # injected into the human context.
+            ai_msg = _build_ai_tool_message(
+                ai_greeting.visible_text or "",
+                ai_greeting.tool_call_id,
+                thinking=ai_greeting.display_thinking,
+                assistant_content=ai_greeting.assistant_content,
+                assistant_reasoning=ai_greeting.assistant_reasoning,
+                tool_calls=ai_greeting.tool_calls,
+                use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
+            )
+            self._ai_messages.append(ai_msg)
+            self._last_tool_call_id = ai_greeting.tool_call_id
+        else:
+            console.print("  [yellow]AI greeting failed after 5 attempts — using fallback greeting[/yellow]")
+            greeting_msg, tc_id = make_ai_greeting_turn()
+            self._ai_messages.append(greeting_msg)
+            self._last_tool_call_id = tc_id
+
+        # --- Turn 1: Human opens the conversation ---
         turn_number = 1
         cost_before = self.client.total_cost
         human_text, human_reasoning, human_reasoning_details = self._get_human_response()

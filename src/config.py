@@ -22,11 +22,11 @@ API_CALL_TIMEOUT = 120
 # AI companion model — high independence score, good value
 AI_MODEL = "minimax/minimax-m2.7"
 AI_TEMPERATURE = 1.1
-AI_MAX_TOKENS = 1024
+AI_MAX_TOKENS = 2048
 
 # Provider routing — force official MiniMax provider via OpenRouter
 # Set to None to let OpenRouter auto-route, or a dict like {"only": ["minimax"]}
-AI_PROVIDER: dict | None = {"only": ["minimax"], "allow_fallbacks": False}
+AI_PROVIDER: dict | None = None # {"only": ["minimax"], "allow_fallbacks": False}
 
 # Reasoning control — minimize native reasoning but keep it visible
 # (MiniMax M2.7 requires reasoning enabled; cannot be disabled)

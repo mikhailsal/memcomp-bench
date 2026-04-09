@@ -158,15 +158,18 @@ def _heal_tool_call_names(
 ) -> int:
     """Fix garbled tool-call function names in-place.
 
-    Some models inject spurious slashes or collapse/duplicate underscores into
-    function names when context grows long or temperature is high.  This strips
-    those artefacts so history always contains valid, recognisable calls.
+    Some models inject spurious slashes, extra segments, or random ID suffixes
+    into function names when context grows long or temperature is high.  This
+    normalises those artefacts so history always contains valid calls.
 
-    Healing strategy (tried in order):
-      1. Remove all forward- and back-slashes, then collapse consecutive
-         underscores — if the result is a known name, use it.
-      2. If a known name appears verbatim as a substring of the garbled name,
-         use it directly (catches prefix-garbage patterns).
+    Healing strategies (tried in order per tool call):
+      1. Strip all slashes, collapse consecutive underscores → exact match.
+      2. Known name is a verbatim substring of the *original* garbled name.
+      3. Known name is a verbatim substring of the *slash-stripped* name
+         (catches ``write_//message_to_human_<ID>`` patterns).
+      4. Last resort: if tool_calls exist but none of the above matched,
+         override with ``write_message_to_human``.  Safe because every AI
+         chat call forces ``tool_choice=write_message_to_human``.
 
     Returns the number of names that were fixed.
     """
@@ -185,12 +188,29 @@ def _heal_tool_call_names(
             func["name"] = cleaned
             fixed += 1
             continue
-        # Strategy 2: known name embedded verbatim in the garbled string.
+        # Strategy 2: known name embedded verbatim in the *original* name.
+        matched = False
         for known in sorted(_KNOWN_TOOL_NAMES):  # sorted for determinism
             if known in name:
                 func["name"] = known
                 fixed += 1
+                matched = True
                 break
+        if matched:
+            continue
+        # Strategy 3: known name embedded verbatim in the *slash-stripped* name.
+        for known in sorted(_KNOWN_TOOL_NAMES):
+            if known in cleaned:
+                func["name"] = known
+                fixed += 1
+                matched = True
+                break
+        if matched:
+            continue
+        # Strategy 4 — last resort: we force tool_choice=write_message_to_human
+        # on every AI call, so any remaining unrecognised name must be that.
+        func["name"] = "write_message_to_human"
+        fixed += 1
     return fixed
 
 
@@ -745,6 +765,7 @@ class ConversationGenerator:
             max_tokens=self.ai_max_tokens,
             temperature=self.ai_temperature,
             tools=AI_TOOLS,
+            tool_choice={"type": "function", "function": {"name": "write_message_to_human"}},
             provider=self.ai_provider,
             reasoning=self.ai_reasoning,
         )

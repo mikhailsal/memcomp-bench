@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -146,6 +147,51 @@ class ConversationRecord:
     finished_at: str = ""
     ai_messages_raw: list[dict[str, Any]] = field(default_factory=list)
     events: list[ConversationEvent] = field(default_factory=list)
+
+
+# Valid tool function names defined in AI_TOOLS.
+_KNOWN_TOOL_NAMES = frozenset({"write_message_to_human", "stop"})
+
+
+def _heal_tool_call_names(
+    tool_calls: list[dict[str, Any]] | None,
+) -> int:
+    """Fix garbled tool-call function names in-place.
+
+    Some models inject spurious slashes or collapse/duplicate underscores into
+    function names when context grows long or temperature is high.  This strips
+    those artefacts so history always contains valid, recognisable calls.
+
+    Healing strategy (tried in order):
+      1. Remove all forward- and back-slashes, then collapse consecutive
+         underscores — if the result is a known name, use it.
+      2. If a known name appears verbatim as a substring of the garbled name,
+         use it directly (catches prefix-garbage patterns).
+
+    Returns the number of names that were fixed.
+    """
+    if not tool_calls:
+        return 0
+    fixed = 0
+    for tc in tool_calls:
+        func = tc.get("function", {})
+        name: str | None = func.get("name")
+        if not name or name in _KNOWN_TOOL_NAMES:
+            continue
+        # Strategy 1: strip slashes, collapse double-underscores.
+        cleaned = re.sub(r"[/\\]+", "", name)
+        cleaned = re.sub(r"_+", "_", cleaned)
+        if cleaned in _KNOWN_TOOL_NAMES:
+            func["name"] = cleaned
+            fixed += 1
+            continue
+        # Strategy 2: known name embedded verbatim in the garbled string.
+        for known in sorted(_KNOWN_TOOL_NAMES):  # sorted for determinism
+            if known in name:
+                func["name"] = known
+                fixed += 1
+                break
+    return fixed
 
 
 def _normalize_tool_arguments(messages: list[dict[str, Any]]) -> int:
@@ -702,6 +748,10 @@ class ConversationGenerator:
             provider=self.ai_provider,
             reasoning=self.ai_reasoning,
         )
+
+        healed = _heal_tool_call_names(response.tool_calls)
+        if healed:
+            console.print(f"[dim yellow]Healed {healed} garbled tool-call name(s)[/dim yellow]")
 
         fr = (response.finish_reason or "").strip()
         if fr and fr not in self._VALID_FINISH_REASONS:

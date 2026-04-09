@@ -474,6 +474,26 @@ def _extract_tool_call_reasoning(turn: ConversationTurn) -> str | None:
     return None
 
 
+def _tool_call_text_before_reasoning(turn: ConversationTurn) -> bool:
+    """Return True when the AI transmitted 'text' before 'reasoning' in tool call arguments.
+
+    Detects cases where the model wrote the reply text before formulating the
+    inner monologue — the JSON key order in the raw argument string reflects
+    the actual transmission order from the model.
+    """
+    if not turn.ai_tool_calls:
+        return False
+    for tc in turn.ai_tool_calls:
+        func = tc.get("function", {})
+        if func.get("name") == "write_message_to_human":
+            args_str = func.get("arguments", "")
+            text_pos = args_str.find('"text"')
+            reasoning_pos = args_str.find('"reasoning"')
+            if text_pos != -1 and reasoning_pos != -1:
+                return text_pos < reasoning_pos
+    return False
+
+
 def _write_conversation_markdown(f: Any, record: ConversationRecord) -> None:
     """Write the human-readable markdown for a conversation to an open file handle."""
     f.write(f"# Conversation: {record.human_profile['name']} & AI\n\n")
@@ -518,6 +538,7 @@ def _write_conversation_markdown(f: Any, record: ConversationRecord) -> None:
                 )
             if turn.human_reasoning:
                 f.write(f"{_format_thinking_markdown(turn.human_reasoning)}\n\n")
+            f.write(f"{turn.visible_text}\n\n")
         else:
             f.write(f"### 🤖 AI (turn {turn.turn_number})\n\n")
             if turn.ai_context_tokens or turn.human_context_tokens:
@@ -527,20 +548,31 @@ def _write_conversation_markdown(f: Any, record: ConversationRecord) -> None:
                 )
             native = turn.ai_reasoning
             tool_inner = _extract_tool_call_reasoning(turn)
+            text_first = _tool_call_text_before_reasoning(turn)
             inline = turn.ai_content
-            shown_any = False
             if native:
                 f.write(f"{_format_thinking_markdown(native, '🧠 Native reasoning:')}\n\n")
-                shown_any = True
-            if tool_inner and tool_inner != native:
-                f.write(f"{_format_thinking_markdown(tool_inner, '💭 Inner monologue:')}\n\n")
-                shown_any = True
-            if inline and inline not in (native, tool_inner):
-                f.write(f"{_format_thinking_markdown(inline, '📋 Response draft:')}\n\n")
-                shown_any = True
-            if not shown_any and turn.ai_thinking:
-                f.write(f"{_format_thinking_markdown(turn.ai_thinking)}\n\n")
-        f.write(f"{turn.visible_text}\n\n")
+            if text_first:
+                # The AI wrote the reply text before the inner monologue —
+                # render in actual transmission order so the log is honest.
+                f.write(f"{turn.visible_text}\n\n")
+                if tool_inner and tool_inner != native:
+                    f.write(f"{_format_thinking_markdown(tool_inner, '💭 Inner monologue (after reply):')}\n\n")
+                if inline and inline not in (native, tool_inner):
+                    f.write(f"{_format_thinking_markdown(inline, '📋 Response draft (after reply):')}\n\n")
+                if not native and not tool_inner and not inline and turn.ai_thinking:
+                    f.write(f"{_format_thinking_markdown(turn.ai_thinking)}\n\n")
+            else:
+                shown_any = bool(native)
+                if tool_inner and tool_inner != native:
+                    f.write(f"{_format_thinking_markdown(tool_inner, '💭 Inner monologue:')}\n\n")
+                    shown_any = True
+                if inline and inline not in (native, tool_inner):
+                    f.write(f"{_format_thinking_markdown(inline, '📋 Response draft:')}\n\n")
+                    shown_any = True
+                if not shown_any and turn.ai_thinking:
+                    f.write(f"{_format_thinking_markdown(turn.ai_thinking)}\n\n")
+                f.write(f"{turn.visible_text}\n\n")
 
 
 class ConversationGenerator:
@@ -924,8 +956,8 @@ class ConversationGenerator:
         else:
             native = turn.ai_reasoning
             tool_inner = _extract_tool_call_reasoning(turn)
+            text_first = _tool_call_text_before_reasoning(turn)
             inline = turn.ai_content
-            shown_any = False
             if native:
                 console.print()
                 console.print(Panel(
@@ -934,49 +966,82 @@ class ConversationGenerator:
                     border_style="dim yellow",
                     padding=(0, 1),
                 ))
-                shown_any = True
-            if tool_inner and tool_inner != native:
-                console.print()
+            if text_first:
+                # AI answered before reasoning — show in actual order.
                 console.print(Panel(
-                    tool_inner,
-                    title=f"💭 Inner monologue  [dim]turn {turn.turn_number}[/dim]",
-                    border_style="dim magenta",
+                    turn.visible_text,
+                    title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="green",
                     padding=(0, 1),
                 ))
-                shown_any = True
-            if inline and inline not in (native, tool_inner):
-                console.print()
+                if tool_inner and tool_inner != native:
+                    console.print()
+                    console.print(Panel(
+                        tool_inner,
+                        title=f"💭 Inner monologue (after reply)  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="dim magenta",
+                        padding=(0, 1),
+                    ))
+                if inline and inline not in (native, tool_inner):
+                    console.print()
+                    console.print(Panel(
+                        inline,
+                        title=f"📋 Response draft (after reply)  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="dim cyan",
+                        padding=(0, 1),
+                    ))
+                if not native and not tool_inner and not inline and turn.ai_thinking:
+                    console.print()
+                    console.print(Panel(
+                        turn.ai_thinking,
+                        title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="dim yellow",
+                        padding=(0, 1),
+                    ))
+            else:
+                shown_any = bool(native)
+                if tool_inner and tool_inner != native:
+                    console.print()
+                    console.print(Panel(
+                        tool_inner,
+                        title=f"💭 Inner monologue  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="dim magenta",
+                        padding=(0, 1),
+                    ))
+                    shown_any = True
+                if inline and inline not in (native, tool_inner):
+                    console.print()
+                    console.print(Panel(
+                        inline,
+                        title=f"📋 Response draft  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="dim cyan",
+                        padding=(0, 1),
+                    ))
+                    shown_any = True
+                if not shown_any and turn.ai_thinking:
+                    thinking_display = turn.ai_thinking
+                    try:
+                        parsed = json.loads(turn.ai_thinking)
+                        if parsed.get("reasoning"):
+                            thinking_display = f"🧠 {parsed['reasoning']}"
+                        elif parsed.get("thoughts"):
+                            # Backward compat with older conversations
+                            thinking_display = f"💭 {parsed['thoughts']}"
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+                    console.print()
+                    console.print(Panel(
+                        thinking_display,
+                        title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="dim yellow",
+                        padding=(0, 1),
+                    ))
                 console.print(Panel(
-                    inline,
-                    title=f"📋 Response draft  [dim]turn {turn.turn_number}[/dim]",
-                    border_style="dim cyan",
+                    turn.visible_text,
+                    title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
+                    border_style="green",
                     padding=(0, 1),
                 ))
-                shown_any = True
-            if not shown_any and turn.ai_thinking:
-                thinking_display = turn.ai_thinking
-                try:
-                    parsed = json.loads(turn.ai_thinking)
-                    if parsed.get("reasoning"):
-                        thinking_display = f"🧠 {parsed['reasoning']}"
-                    elif parsed.get("thoughts"):
-                        # Backward compat with older conversations
-                        thinking_display = f"💭 {parsed['thoughts']}"
-                except (json.JSONDecodeError, AttributeError):
-                    pass
-                console.print()
-                console.print(Panel(
-                    thinking_display,
-                    title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
-                    border_style="dim yellow",
-                    padding=(0, 1),
-                ))
-            console.print(Panel(
-                turn.visible_text,
-                title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
-                border_style="green",
-                padding=(0, 1),
-            ))
 
     def _generate_conversation_plan(self) -> str:
         """Generate the human's conversation plan before starting the dialogue."""

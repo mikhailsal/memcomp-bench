@@ -47,7 +47,6 @@ from src.prompts import (
     make_ai_greeting_turn,
     make_ai_tool_call,
     make_human_tool_result,
-    next_tool_call_id,
     reset_tool_call_counter,
     set_tool_call_counter,
 )
@@ -104,6 +103,7 @@ class ParsedAIResponse:
     assistant_content: str | None = None
     assistant_reasoning: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
+    rejection_reason: str | None = None
 
 
 @dataclass
@@ -718,9 +718,9 @@ class ConversationGenerator:
                         assistant_content = json_part
                     visible_text = msg_part
         elif assistant_content:
-            # No tool call — content has both thinking and message
-            visible_text, assistant_content = _split_thinking_and_message(assistant_content)
-            tc_id = None
+            # Model returned plain content without using the tool — reject and signal a retry
+            # so the history is never contaminated with synthetic tool-call entries.
+            return ParsedAIResponse(None, None, None, rejection_reason="no tool call")
 
         display_thinking = assistant_reasoning or tool_reasoning or assistant_content
 
@@ -748,29 +748,20 @@ class ConversationGenerator:
         response: ParsedAIResponse,
     ) -> str:
         """Add an AI turn to both context histories. Returns the tool_call_id used."""
-        # For AI context: add as tool call
-        if response.tool_call_id:
-            ai_msg = _build_ai_tool_message(
-                response.visible_text or "",
-                response.tool_call_id,
-                thinking=response.display_thinking,
-                assistant_content=response.assistant_content,
-                assistant_reasoning=response.assistant_reasoning,
-                tool_calls=response.tool_calls,
-                use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
+        if not response.tool_call_id:
+            raise ValueError(
+                "_add_ai_turn_to_contexts called without a tool_call_id — "
+                "content-only responses must be rejected in _get_ai_response before reaching here"
             )
-        else:
-            # Fallback: model didn't use tool, wrap it ourselves
-            tc_id = next_tool_call_id()
-            ai_msg = _build_ai_tool_message(
-                response.visible_text or "",
-                tc_id,
-                thinking=response.display_thinking,
-                assistant_content=response.assistant_content,
-                assistant_reasoning=response.assistant_reasoning,
-                use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
-            )
-            response.tool_call_id = tc_id
+        ai_msg = _build_ai_tool_message(
+            response.visible_text or "",
+            response.tool_call_id,
+            thinking=response.display_thinking,
+            assistant_content=response.assistant_content,
+            assistant_reasoning=response.assistant_reasoning,
+            tool_calls=response.tool_calls,
+            use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
+        )
 
         self._ai_messages.append(ai_msg)
 
@@ -1023,8 +1014,9 @@ class ConversationGenerator:
 
             if not ai_response.visible_text:
                 consecutive_empty += 1
-                wait = min(2 ** consecutive_empty, 16)
-                console.print(f"[yellow]AI produced empty response ({consecutive_empty}/{max_consecutive_empty}), retrying in {wait}s...[/yellow]")
+                wait = min(2 ** consecutive_empty, 32)
+                reason = ai_response.rejection_reason or "empty response"
+                console.print(f"[yellow]AI produced incorrect response ({reason}) — attempt {consecutive_empty}/{max_consecutive_empty}, retrying in {wait}s...[/yellow]")
                 turn_number -= 1
                 if consecutive_empty >= max_consecutive_empty:
                     console.print("[bold yellow]Too many consecutive empty AI responses — ending conversation.[/bold yellow]")

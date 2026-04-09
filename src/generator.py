@@ -29,6 +29,8 @@ from src.config import (
     COMPANION_MODE,
     HUMAN_MAX_TOKENS,
     HUMAN_MODEL,
+    HUMAN_PROVIDER,
+    HUMAN_REASONING,
     HUMAN_TEMPERATURE,
     JUDGE_MAX_TOKENS,
     JUDGE_MODEL,
@@ -138,6 +140,8 @@ class ConversationRecord:
     ai_reasoning: dict | None = None
     ai_temperature: float = AI_TEMPERATURE
     ai_max_tokens: int = AI_MAX_TOKENS
+    human_provider: dict | None = None
+    human_reasoning: dict | None = None
     human_temperature: float = HUMAN_TEMPERATURE
     human_max_tokens: int = HUMAN_MAX_TOKENS
     turns: list[ConversationTurn] = field(default_factory=list)
@@ -594,6 +598,8 @@ class ConversationGenerator:
         ai_reasoning: dict | None = AI_REASONING,
         ai_temperature: float = AI_TEMPERATURE,
         ai_max_tokens: int = AI_MAX_TOKENS,
+        human_provider: dict | None = HUMAN_PROVIDER,
+        human_reasoning: dict | None = HUMAN_REASONING,
         human_temperature: float = HUMAN_TEMPERATURE,
         human_max_tokens: int = HUMAN_MAX_TOKENS,
     ) -> None:
@@ -610,6 +616,8 @@ class ConversationGenerator:
         self.ai_reasoning = ai_reasoning
         self.ai_temperature = ai_temperature
         self.ai_max_tokens = ai_max_tokens
+        self.human_provider = human_provider
+        self.human_reasoning = human_reasoning
         self.human_temperature = human_temperature
         self.human_max_tokens = human_max_tokens
 
@@ -647,6 +655,8 @@ class ConversationGenerator:
             ai_reasoning=ai_reasoning,
             ai_temperature=ai_temperature,
             ai_max_tokens=ai_max_tokens,
+            human_provider=human_provider,
+            human_reasoning=human_reasoning,
             human_temperature=human_temperature,
             human_max_tokens=human_max_tokens,
             started_at=datetime.now(timezone.utc).isoformat(),
@@ -848,6 +858,8 @@ class ConversationGenerator:
             messages=self._human_messages,
             max_tokens=self.human_max_tokens,
             temperature=self.human_temperature,
+            provider=self.human_provider,
+            reasoning=self.human_reasoning,
         )
         return response.content or "", response.reasoning, response.reasoning_details, response.usage
 
@@ -1058,6 +1070,7 @@ class ConversationGenerator:
             messages=plan_messages,
             max_tokens=1500,
             temperature=0.95,
+            provider=self.human_provider,
         )
         plan = response.content or ""
         console.print(f"  [dim]Plan generated ({_estimate_tokens(plan)} tokens)[/dim]")
@@ -1110,47 +1123,53 @@ class ConversationGenerator:
             turn_number += 1
             cost_before = self.client.total_cost
             human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
-            human_cost = self.client.total_cost - cost_before
 
             if not human_text or not human_text.strip():
-                consecutive_empty += 1
-                console.print("[yellow]Human produced empty response, retrying with nudge...[/yellow]")
-                self._human_messages.append({
-                    "role": "user",
-                    "content": "(The AI just said something. Please respond naturally.)",
-                })
-                human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
-                self._human_messages.pop(-1)
-                if not human_text or not human_text.strip():
-                    human_text = "hmm interesting, tell me more"
-                    human_reasoning = None
-                    human_reasoning_details = None
-            consecutive_empty = 0
+                _got_response = False
+                for _retry in range(1, max_consecutive_empty):
+                    wait = min(2 ** _retry, 16)
+                    console.print(f"[yellow]Human produced empty response ({_retry}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]")
+                    time.sleep(wait)
+                    self._human_messages.append({
+                        "role": "user",
+                        "content": "(The AI just said something. Please respond naturally.)",
+                    })
+                    human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
+                    self._human_messages.pop(-1)
+                    if human_text and human_text.strip():
+                        _got_response = True
+                        break
+                if not _got_response:
+                    console.print("[bold yellow]Human still empty after max retries — ending conversation.[/bold yellow]")
+                    turn_number = self.max_turns  # skip the main while loop
+            human_cost = self.client.total_cost - cost_before
 
-            self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
+            if turn_number < self.max_turns:
+                consecutive_empty = 0
+                self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
 
-            human_tokens = _estimate_tokens(human_text)
-            accumulated_tokens += human_tokens
+                human_tokens = _estimate_tokens(human_text)
+                accumulated_tokens += human_tokens
 
-            human_ctx = (
-                (human_usage.prompt_tokens + human_usage.completion_tokens)
-                if human_usage and human_usage.prompt_tokens
-                else _estimate_context_tokens(self._human_messages)
-            )
-            human_turn = ConversationTurn(
-                turn_number=turn_number,
-                speaker="human",
-                visible_text=human_text,
-                human_reasoning=human_reasoning,
-                human_reasoning_details=human_reasoning_details,
-                token_estimate=human_tokens,
-                cost_usd=human_cost,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                ai_context_tokens=_estimate_context_tokens(self._ai_messages),
-                human_context_tokens=human_ctx,
-            )
-            self._record.turns.append(human_turn)
-            self._log_turn(human_turn)
+                human_ctx = (
+                    (human_usage.prompt_tokens + human_usage.completion_tokens)
+                    if human_usage and human_usage.prompt_tokens
+                    else _estimate_context_tokens(self._human_messages)
+                )
+                human_turn = ConversationTurn(
+                    turn_number=turn_number,
+                    speaker="human",
+                    visible_text=human_text,
+                    human_reasoning=human_reasoning,
+                    human_reasoning_details=human_reasoning_details,
+                    token_estimate=human_tokens,
+                    cost_usd=human_cost,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    ai_context_tokens=_estimate_context_tokens(self._ai_messages),
+                    human_context_tokens=human_ctx,
+                )
+                self._record.turns.append(human_turn)
+                self._log_turn(human_turn)
 
         while turn_number < self.max_turns:
             # AI turn
@@ -1246,24 +1265,24 @@ class ConversationGenerator:
             human_cost = self.client.total_cost - cost_before
 
             if not human_text or not human_text.strip():
-                consecutive_empty += 1
-                wait = min(2 ** consecutive_empty, 16)
-                console.print(f"[yellow]Human produced empty response ({consecutive_empty}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]")
-                if consecutive_empty >= max_consecutive_empty:
-                    console.print("[bold yellow]Too many consecutive empty responses — ending conversation.[/bold yellow]")
+                _got_response = False
+                for _retry in range(1, max_consecutive_empty):
+                    wait = min(2 ** _retry, 16)
+                    console.print(f"[yellow]Human produced empty response ({_retry}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]")
+                    time.sleep(wait)
+                    self._human_messages.append({
+                        "role": "user",
+                        "content": "(The AI just said something. Please respond naturally as yourself — share your thoughts, tell a story, bring up a new topic, or react to what they said.)",
+                    })
+                    human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
+                    self._human_messages.pop(-1)
+                    if human_text and human_text.strip():
+                        _got_response = True
+                        break
+                if not _got_response:
+                    console.print("[bold yellow]Human still empty after max retries — ending conversation.[/bold yellow]")
                     turn_number -= 1
                     break
-                time.sleep(wait)
-                self._human_messages.append({
-                    "role": "user",
-                    "content": "(The AI just said something. Please respond naturally as yourself — share your thoughts, tell a story, bring up a new topic, or react to what they said.)",
-                })
-                human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
-                self._human_messages.pop(-1)
-                if not human_text or not human_text.strip():
-                    console.print("[yellow]Human still empty, skipping turn[/yellow]")
-                    turn_number -= 1
-                    continue
             consecutive_empty = 0
 
             self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
@@ -1315,6 +1334,10 @@ class ConversationGenerator:
             console.print(f"  AI provider: {self.ai_provider}")
         if self.ai_reasoning:
             console.print(f"  AI reasoning: {self.ai_reasoning}")
+        if self.human_provider:
+            console.print(f"  Human provider: {self.human_provider}")
+        if self.human_reasoning:
+            console.print(f"  Human reasoning: {self.human_reasoning}")
         console.print(f"  Target: ~{self.target_tokens:,} tokens")
         console.print(f"  Seed: {', '.join(self._seed_words)}")
 
@@ -1364,13 +1387,23 @@ class ConversationGenerator:
         turn_number = 1
         cost_before = self.client.total_cost
         human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
-        human_cost = self.client.total_cost - cost_before
 
         if not human_text or not human_text.strip():
-            console.print("[yellow]Human produced empty first response, using fallback[/yellow]")
-            human_text = f"Hey there! I'm {self.human_profile['name']}. Just wanted to say hi and see how you're doing. I'm really curious to get to know you."
-            human_reasoning = None
-            human_reasoning_details = None
+            _got_response = False
+            for _retry in range(1, 5):
+                wait = min(2 ** _retry, 16)
+                console.print(f"[yellow]Human produced empty first response ({_retry}/5), retrying in {wait}s...[/yellow]")
+                time.sleep(wait)
+                human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
+                if human_text and human_text.strip():
+                    _got_response = True
+                    break
+            if not _got_response:
+                console.print("[yellow]Human produced empty first response after max retries, using fallback[/yellow]")
+                human_text = f"Hey there! I'm {self.human_profile['name']}. Just wanted to say hi and see how you're doing. I'm really curious to get to know you."
+                human_reasoning = None
+                human_reasoning_details = None
+        human_cost = self.client.total_cost - cost_before
 
         self._add_human_turn_to_contexts(human_text, is_first=True, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
 
@@ -1410,6 +1443,11 @@ class ConversationGenerator:
         ai_model_override: str | None = None,
         human_model_override: str | None = None,
         ai_provider_override: object = _UNSET,
+        human_provider_override: object = _UNSET,
+        ai_temperature_override: float | None = None,
+        human_temperature_override: float | None = None,
+        ai_max_tokens_override: int | None = None,
+        human_max_tokens_override: int | None = None,
     ) -> ConversationRecord:
         """Resume a conversation from a saved JSONL file."""
         jsonl_path = Path(jsonl_path)
@@ -1440,12 +1478,23 @@ class ConversationGenerator:
         # that pre-date this field. Override wins if explicitly passed.
         saved_ai_provider = metadata.get("ai_provider", AI_PROVIDER)
         ai_provider = ai_provider_override if ai_provider_override is not _UNSET else saved_ai_provider
+        saved_human_provider = metadata.get("human_provider", HUMAN_PROVIDER)
+        human_provider = human_provider_override if human_provider_override is not _UNSET else saved_human_provider
         # Restore inference params; fall back to current config values for old files.
         ai_reasoning = metadata.get("ai_reasoning", AI_REASONING)
+        human_reasoning = metadata.get("human_reasoning", HUMAN_REASONING)
         ai_temperature = metadata.get("ai_temperature", AI_TEMPERATURE)
+        if ai_temperature_override is not None:
+            ai_temperature = ai_temperature_override
         ai_max_tokens = metadata.get("ai_max_tokens", AI_MAX_TOKENS)
+        if ai_max_tokens_override is not None:
+            ai_max_tokens = ai_max_tokens_override
         human_temperature = metadata.get("human_temperature", HUMAN_TEMPERATURE)
+        if human_temperature_override is not None:
+            human_temperature = human_temperature_override
         human_max_tokens = metadata.get("human_max_tokens", HUMAN_MAX_TOKENS)
+        if human_max_tokens_override is not None:
+            human_max_tokens = human_max_tokens_override
         previous_cost = metadata.get("total_cost_usd", 0.0)
 
         # Load raw AI context
@@ -1489,7 +1538,17 @@ class ConversationGenerator:
             console.print(f"  AI provider: {ai_provider}" + (" [yellow](overridden)[/yellow]" if overridden else ""))
         if ai_reasoning:
             console.print(f"  AI reasoning: {ai_reasoning}")
-        console.print(f"  AI temperature: {ai_temperature} / Human temperature: {human_temperature}")
+        if human_provider:
+            overridden_hp = human_provider_override is not _UNSET
+            console.print(f"  Human provider: {human_provider}" + (" [yellow](overridden)[/yellow]" if overridden_hp else ""))
+        if human_reasoning:
+            console.print(f"  Human reasoning: {human_reasoning}")
+        temp_line = f"  AI temperature: {ai_temperature}" + (" [yellow](overridden)[/yellow]" if ai_temperature_override is not None else "")
+        temp_line += f" / Human temperature: {human_temperature}" + (" [yellow](overridden)[/yellow]" if human_temperature_override is not None else "")
+        console.print(temp_line)
+        tokens_line = f"  AI max tokens: {ai_max_tokens}" + (" [yellow](overridden)[/yellow]" if ai_max_tokens_override is not None else "")
+        tokens_line += f" / Human max tokens: {human_max_tokens}" + (" [yellow](overridden)[/yellow]" if human_max_tokens_override is not None else "")
+        console.print(tokens_line)
         console.print(f"  Previous cost: ${previous_cost:.4f}")
         console.print(f"  New target: ~{target_tokens:,} tokens")
         console.print(f"  Seed: {', '.join(seed_words)}")
@@ -1527,6 +1586,8 @@ class ConversationGenerator:
             ai_reasoning=ai_reasoning,
             ai_temperature=ai_temperature,
             ai_max_tokens=ai_max_tokens,
+            human_provider=human_provider,
+            human_reasoning=human_reasoning,
             human_temperature=human_temperature,
             human_max_tokens=human_max_tokens,
         )

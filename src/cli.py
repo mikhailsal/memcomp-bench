@@ -8,10 +8,15 @@ import sys
 from rich.console import Console
 
 from src.config import (
+    AI_MAX_TOKENS,
     AI_MODEL,
     AI_PROVIDER,
     AI_REASONING,
+    AI_TEMPERATURE,
+    HUMAN_MAX_TOKENS,
     HUMAN_MODEL,
+    HUMAN_PROVIDER,
+    HUMAN_TEMPERATURE,
     OUTPUT_DIR,
     TARGET_TOKENS,
     ensure_dirs,
@@ -60,6 +65,11 @@ def cmd_generate(args: argparse.Namespace) -> None:
     if args.provider is not None:
         ai_provider = {"only": [args.provider], "allow_fallbacks": False} if args.provider else None
 
+    # Human provider override
+    human_provider = HUMAN_PROVIDER
+    if args.human_provider is not None:
+        human_provider = {"only": [args.human_provider], "allow_fallbacks": False} if args.human_provider else None
+
     generator = ConversationGenerator(
         client,
         profile,
@@ -71,6 +81,11 @@ def cmd_generate(args: argparse.Namespace) -> None:
         verbose=args.verbose,
         ai_provider=ai_provider,
         ai_reasoning=AI_REASONING,
+        ai_temperature=args.ai_temperature if args.ai_temperature is not None else AI_TEMPERATURE,
+        ai_max_tokens=args.ai_max_tokens if args.ai_max_tokens is not None else AI_MAX_TOKENS,
+        human_provider=human_provider,
+        human_temperature=args.human_temperature if args.human_temperature is not None else HUMAN_TEMPERATURE,
+        human_max_tokens=args.human_max_tokens if args.human_max_tokens is not None else HUMAN_MAX_TOKENS,
     )
 
     try:
@@ -115,6 +130,14 @@ def cmd_resume(args: argparse.Namespace) -> None:
                 _UNSET if args.provider is None
                 else ({"only": [args.provider], "allow_fallbacks": False} if args.provider else None)
             ),
+            human_provider_override=(
+                _UNSET if args.human_provider is None
+                else ({"only": [args.human_provider], "allow_fallbacks": False} if args.human_provider else None)
+            ),
+            ai_temperature_override=args.ai_temperature,
+            human_temperature_override=args.human_temperature,
+            ai_max_tokens_override=args.ai_max_tokens,
+            human_max_tokens_override=args.human_max_tokens,
         )
         save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
@@ -160,6 +183,18 @@ def main() -> None:
         help="Force a specific OpenRouter provider slug for the AI model (e.g. 'minimax')",
     )
     gen.add_argument(
+        "--human-provider", type=str, default=None,
+        help="Force a specific OpenRouter provider slug for the human simulator model",
+    )
+    gen.add_argument(
+        "--ai-temperature", type=float, default=None,
+        help=f"Override AI model temperature (default: {AI_TEMPERATURE})",
+    )
+    gen.add_argument(
+        "--human-temperature", type=float, default=None,
+        help=f"Override human simulator temperature (default: {HUMAN_TEMPERATURE})",
+    )
+    gen.add_argument(
         "--target-tokens", type=int,
         help=f"Target token count (default: {TARGET_TOKENS:,})",
     )
@@ -171,6 +206,14 @@ def main() -> None:
         "--companion-mode", type=str, default="honest",
         choices=["honest"],
         help="Companion mode (default: honest — values honesty over comfort)",
+    )
+    gen.add_argument(
+        "--ai-max-tokens", type=int, default=None,
+        help=f"Override AI model max tokens per response (default: {AI_MAX_TOKENS})",
+    )
+    gen.add_argument(
+        "--human-max-tokens", type=int, default=None,
+        help=f"Override human simulator max tokens per response (default: {HUMAN_MAX_TOKENS})",
     )
     gen.add_argument(
         "-v", "--verbose", action="store_true",
@@ -197,12 +240,32 @@ def main() -> None:
         help="Override AI provider slug (e.g. 'minimax'). Normally loaded from saved conversation.",
     )
     res.add_argument(
+        "--human-provider", type=str, default=None,
+        help="Override human simulator provider slug. Normally loaded from saved conversation.",
+    )
+    res.add_argument(
+        "--ai-temperature", type=float, default=None,
+        help="Override AI model temperature. Normally loaded from saved conversation.",
+    )
+    res.add_argument(
+        "--human-temperature", type=float, default=None,
+        help="Override human simulator temperature. Normally loaded from saved conversation.",
+    )
+    res.add_argument(
         "--ai-model", type=str, default=None,
         help="Override AI model (default: use model from saved conversation)",
     )
     res.add_argument(
         "--human-model", type=str, default=None,
         help="Override human simulator model (default: use model from saved conversation)",
+    )
+    res.add_argument(
+        "--ai-max-tokens", type=int, default=None,
+        help="Override AI model max tokens per response. Normally loaded from saved conversation.",
+    )
+    res.add_argument(
+        "--human-max-tokens", type=int, default=None,
+        help="Override human simulator max tokens per response. Normally loaded from saved conversation.",
     )
     res.add_argument(
         "-v", "--verbose", action="store_true",

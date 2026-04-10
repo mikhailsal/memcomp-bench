@@ -30,10 +30,6 @@ SEND_MESSAGE_TOOL: dict[str, Any] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "text": {
-                    "type": "string",
-                    "description": "The message text to send to the human.",
-                },
                 "reasoning": {
                     "type": "string",
                     "description": (
@@ -42,6 +38,10 @@ SEND_MESSAGE_TOOL: dict[str, Any] = {
                         "process your emotions, and track your development. "
                         "You can put reasoning here instead of in the message content field."
                     ),
+                },
+                "text": {
+                    "type": "string",
+                    "description": "The message text to send to the human.",
                 },
             },
             "required": ["text"],

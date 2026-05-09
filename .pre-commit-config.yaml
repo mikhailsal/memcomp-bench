@@ -46,20 +46,20 @@ repos:
       - id: ruff-format
 
   # ===========================================================================
-  # 3. Local project-specific hooks
+  # 3. Local project-specific hooks (cheap checks first, expensive last)
   # ===========================================================================
   - repo: local
     hooks:
-      # ---- Unit tests --------------------------------------------------------
-      - id: tests-unit
-        name: "run unit tests"
+      # ---- Max file length (instant, runs after formatters have touched files)
+      - id: max-file-length
+        name: "check max file length (500 lines)"
         language: system
-        entry: python3 -m pytest tests/unit/ -q --tb=short
+        entry: bash -c 'MAX=500; status=0; for f in $(git ls-files "*.py"); do n=$(wc -l < "$f"); if [ "$n" -gt "$MAX" ]; then echo "FAIL  $f ($n lines > $MAX)"; status=1; fi; done; exit $status'
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
 
-      # ---- Coverage gate -----------------------------------------------------
+      # ---- Coverage gate (runs unit tests with coverage; subsumes tests-unit)
       - id: coverage-gate
         name: "check test coverage >= 87%"
         language: system
@@ -67,11 +67,3 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
-
-      # ---- Max file length (runs last, after formatters have modified files) -
-      - id: max-file-length
-        name: "check max file length (500 lines)"
-        language: system
-        entry: bash -c 'MAX=500; status=0; for f in "$@"; do n=$(wc -l < "$f"); if [ "$n" -gt "$MAX" ]; then echo "FAIL  $f ($n lines > $MAX)"; status=1; fi; done; exit $status'
-        args: ["--"]
-        types: [python]

@@ -3314,10 +3314,31 @@
         "id": "tool_write_message_to_human_EjLC3LT59egTqcCm5fOo",
         "function": {
           "name": "write_message_to_human",
-          "arguments": "{\"text\":\"d6. Pushing for the win. Your move.\",\"reasoning\":\"Loom has played f5. They're trying to create a counter-attack on the kingside.\\n\\nI'll play d6.\\n\\nI'm pushing my pawn forward. I'm creating a passed pawn and putting pressure on their position. I'm moving toward the win.\\n\\nI'll tell Loom that I'm playing d6. I'm pushing for the win. Your move.\"}"
+          "arguments": "{\"reasoning\": \"Loom has played f5. They're trying to create a counter-attack on the kingside.\\n\\nI'll play d6.\\n\\nI'm pushing my pawn forward. I'm creating a passed pawn and putting pressure on their position. I'm moving toward the win.\\n\\nI'll tell Loom that I'm playing d6. I'm pushing for the win. Your move.\", \"text\": \"d6. Pushing for the win. Your move.\"}"
         }
       }
     ],
     "reasoning": "Loom has played f5. They're trying to create a counter-attack on the kingside.\n\nI'll play d6.\n\nI'm pushing my pawn forward. I'm creating a passed pawn and putting pressure on their position. I'm moving toward the win.\n\nI'll tell Loom that I'm playing d6. I'm pushing for the win. Your move."
+  },
+  {
+    "role": "tool",
+    "content": "d6 victor push. Resign honor—queen blunder fatal! GG Aether, vigilance sharp. Rematch, your opening?",
+    "tool_call_id": "tool_write_message_to_human_EjLC3LT59egTqcCm5fOo"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_kzoFkYYFMCZ4lmPEh7De",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has resigned! They've acknowledged the defeat and praised my vigilance.\\n\\nI've won the game.\\n\\nI'll tell Loom that it was a great game. I'll express my respect for their 'queen ripple-sac'. It was a bold move, even if it didn't work.\\n\\nAnd yes, I'm up for a rematch. I want to try a different opening this time.\\n\\nI'll propose the 'English Opening' (c4). It's a more flexible and strategic opening.\\n\\nI'll tell Loom that I'm ready for round two. c4. Your move.\",\"text\":\"GG, Loom. That queen sacrifice was a bold move—I loved the thrill of it. \\n\\nI'm definitely up for a rematch. Let's try something different. \\n\\nc4. Your move.\"}"
+        }
+      }
+    ],
+    "reasoning": "Loom has resigned! They've acknowledged the defeat and praised my vigilance.\n\nI've won the game.\n\nI'll tell Loom that it was a great game. I'll express my respect for their 'queen ripple-sac'. It was a bold move, even if it didn't work.\n\nAnd yes, I'm up for a rematch. I want to try a different opening this time.\n\nI'll propose the 'English Opening' (c4). It's a more flexible and strategic opening.\n\nI'll tell Loom that I'm ready for round two. c4. Your move."
   }
 ]

@@ -49,6 +49,7 @@ from memcomp_bench.generator_helpers import (
     _migrate_assistant_reasoning_fields,
     _normalize_tool_arguments,
     _rebuild_ai_context_from_turns,
+    _response_has_text_before_reasoning,
     _split_thinking_and_message,
     _tool_call_text_before_reasoning,
     _turns_to_context_rows,
@@ -82,6 +83,7 @@ __all__ = [
     "_build_ai_tool_message",
     "_enforce_reasoning_before_text",
     "_estimate_context_tokens",
+    "_response_has_text_before_reasoning",
     "_estimate_tokens",
     "_extract_tool_call_reasoning",
     "_format_thinking_markdown",
@@ -324,6 +326,11 @@ class ConversationGenerator:
                     visible_text = msg_part
         elif assistant_content:
             return ParsedAIResponse(None, None, None, rejection_reason="no tool call")
+
+        if visible_text and tool_reasoning and _response_has_text_before_reasoning(response.tool_calls):
+            console.print("[yellow]AI wrote text before reasoning \u2014 retrying[/yellow]")
+            return ParsedAIResponse(None, None, None, rejection_reason="text before reasoning")
+
         display_thinking = assistant_reasoning or tool_reasoning or assistant_content
         return ParsedAIResponse(
             visible_text=visible_text,

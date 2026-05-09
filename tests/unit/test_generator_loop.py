@@ -302,7 +302,7 @@ class TestVerboseMode:
         client.enqueue(make_plain_response("Plan."))
         client.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
         client.enqueue(make_plain_response("Hey!", reasoning="human thinking"))
-        args = json.dumps({"text": "Response", "reasoning": "inner monologue"})
+        args = json.dumps({"reasoning": "inner monologue", "text": "Response"})
         client.enqueue(
             LLMResponse(
                 content="draft content",

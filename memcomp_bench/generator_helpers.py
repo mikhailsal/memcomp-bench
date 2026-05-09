@@ -480,3 +480,19 @@ def _tool_call_text_before_reasoning(turn: ConversationTurn) -> bool:
             if text_pos != -1 and reasoning_pos != -1:
                 return text_pos < reasoning_pos
     return False
+
+
+def _response_has_text_before_reasoning(tool_calls: list[dict[str, Any]] | None) -> bool:
+    """Return True when raw tool call args have 'text' before 'reasoning' (reject trigger)."""
+    if not tool_calls:
+        return False
+    for tc in tool_calls:
+        func = tc.get("function", {})
+        if func.get("name") != "write_message_to_human":
+            continue
+        args_str = func.get("arguments", "")
+        text_pos = args_str.find('"text"')
+        reasoning_pos = args_str.find('"reasoning"')
+        if text_pos != -1 and reasoning_pos != -1 and text_pos < reasoning_pos:
+            return True
+    return False

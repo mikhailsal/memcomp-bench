@@ -57,6 +57,7 @@ def make_tool_call_response(
     tool_call_id: str = "tc_001",
     *,
     reasoning: str | None = None,
+    reasoning_details: list[dict[str, Any]] | None = None,
     finish_reason: str = "tool_calls",
     prompt_tokens: int = 50,
     completion_tokens: int = 30,
@@ -79,6 +80,7 @@ def make_tool_call_response(
             }
         ],
         reasoning=None,
+        reasoning_details=reasoning_details,
         usage=Usage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,

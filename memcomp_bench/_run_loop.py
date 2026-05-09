@@ -115,6 +115,7 @@ def _bootstrap_ai_greeting(gen: Any) -> None:
             assistant_content=ai_greeting.assistant_content,
             assistant_reasoning=ai_greeting.assistant_reasoning,
             tool_calls=ai_greeting.tool_calls,
+            reasoning_details=ai_greeting.reasoning_details,
             use_reasoning_field=_uses_native_reasoning_field(gen.ai_reasoning),
         )
         gen._ai_messages.append(ai_msg)
@@ -163,6 +164,7 @@ def _record_ai_turn(gen: Any, ai_response: Any, turn_number: int, ai_cost: float
         ai_content=ai_response.assistant_content,
         ai_reasoning=ai_response.assistant_reasoning,
         ai_tool_calls=copy.deepcopy(ai_response.tool_calls),
+        ai_reasoning_details=copy.deepcopy(ai_response.reasoning_details),
         token_estimate=ai_tokens,
         cost_usd=ai_cost,
         timestamp=datetime.now(timezone.utc).isoformat(),

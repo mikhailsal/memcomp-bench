@@ -339,6 +339,7 @@ class ConversationGenerator:
             assistant_content=assistant_content,
             assistant_reasoning=assistant_reasoning,
             tool_calls=copy.deepcopy(response.tool_calls),
+            reasoning_details=response.reasoning_details,
             usage=response.usage,
         )
 
@@ -365,6 +366,7 @@ class ConversationGenerator:
             assistant_content=response.assistant_content,
             assistant_reasoning=response.assistant_reasoning,
             tool_calls=response.tool_calls,
+            reasoning_details=response.reasoning_details,
             use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
         )
         self._ai_messages.append(ai_msg)

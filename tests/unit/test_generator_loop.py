@@ -163,10 +163,11 @@ class TestGenerateLoop:
         assert record.started_at != ""
 
     def test_ai_context_preserves_model_response_shape(self, monkeypatch):
-        """History must not inject reasoning/content when the model only used tool-call args."""
+        """History must preserve reasoning_details and not inject reasoning/content."""
         monkeypatch.setattr(time, "sleep", lambda _: None)
         client = FakeChatClient()
         client.enqueue(make_plain_response("Plan: Talk about life."))
+        enc = [{"type": "reasoning.encrypted", "data": "abc==", "format": "v1"}]
         for tc_id, reasoning, text, ptok in [
             ("tc_g001", "First greeting thought", "Hey there!", 100),
             ("tc_a001", "Thinking about the human", "Nice to meet you too!", 200),
@@ -183,6 +184,7 @@ class TestGenerateLoop:
                         }
                     ],
                     reasoning=None,
+                    reasoning_details=enc,
                     usage=Usage(prompt_tokens=ptok, completion_tokens=20),
                     finish_reason="tool_calls",
                     raw={},
@@ -205,6 +207,7 @@ class TestGenerateLoop:
             assert msg.get("tool_calls"), "All assistant msgs should have tool_calls"
             assert msg.get("reasoning") is None, f"reasoning leaked: {msg.get('reasoning')!r}"
             assert msg.get("content") is None, f"content leaked: {msg.get('content')!r}"
+            assert msg.get("reasoning_details") == enc, "reasoning_details must be preserved"
 
 
 class TestResumeLoop:

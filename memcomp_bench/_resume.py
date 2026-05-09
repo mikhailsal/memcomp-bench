@@ -407,6 +407,7 @@ def _restore_events_and_turns(gen: Any, events: list, turns: list) -> None:
                 ai_content=turn_data.get("ai_content"),
                 ai_reasoning=turn_data.get("ai_reasoning"),
                 ai_tool_calls=turn_data.get("ai_tool_calls"),
+                ai_reasoning_details=turn_data.get("ai_reasoning_details"),
                 human_reasoning=turn_data.get("human_reasoning"),
                 human_reasoning_details=turn_data.get("human_reasoning_details"),
                 token_estimate=turn_data.get("token_estimate", 0),

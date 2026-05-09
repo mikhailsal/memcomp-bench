@@ -38,6 +38,7 @@ class ConversationTurn:
     ai_content: str | None = None
     ai_reasoning: str | None = None
     ai_tool_calls: list[dict[str, Any]] | None = None
+    ai_reasoning_details: list[dict[str, Any]] | None = None
     human_reasoning: str | None = None
     human_reasoning_details: list[dict[str, Any]] | None = None
     token_estimate: int = 0
@@ -57,6 +58,7 @@ class ParsedAIResponse:
     assistant_content: str | None = None
     assistant_reasoning: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
+    reasoning_details: list[dict[str, Any]] | None = None
     rejection_reason: str | None = None
     usage: Usage | None = None
 
@@ -262,6 +264,7 @@ def _build_ai_tool_message(
     assistant_content: str | None = None,
     assistant_reasoning: str | None = None,
     tool_calls: list[dict[str, Any]] | None = None,
+    reasoning_details: list[dict[str, Any]] | None = None,
     use_reasoning_field: bool = False,
 ) -> dict[str, Any]:
     """Construct an assistant tool-call message with a fixed tool call id."""
@@ -291,6 +294,8 @@ def _build_ai_tool_message(
             message["reasoning"] = thinking
         else:
             message["content"] = thinking
+    if reasoning_details:
+        message["reasoning_details"] = copy.deepcopy(reasoning_details)
     return message
 
 
@@ -333,10 +338,7 @@ def _rebuild_ai_context_from_turns(
     *,
     use_reasoning_field: bool = False,
 ) -> list[dict[str, Any]]:
-    """Rebuild AI-side tool history from saved turns.
-
-    Fallback for older/partial runs where the raw AI context was not saved correctly.
-    """
+    """Rebuild AI-side tool history from saved turns (fallback for older/partial runs)."""
     ai_messages: list[dict[str, Any]] = [
         {"role": "system", "content": ai_system_prompt},
         {"role": "user", "content": "[start]"},
@@ -371,6 +373,7 @@ def _rebuild_ai_context_from_turns(
                 assistant_content=turn.get("ai_content"),
                 assistant_reasoning=turn.get("ai_reasoning"),
                 tool_calls=turn.get("ai_tool_calls"),
+                reasoning_details=turn.get("ai_reasoning_details"),
                 use_reasoning_field=use_reasoning_field,
             )
         )
@@ -388,17 +391,14 @@ def _turns_to_context_rows(turns: list[ConversationTurn]) -> list[dict[str, Any]
             "ai_content": turn.ai_content,
             "ai_reasoning": turn.ai_reasoning,
             "ai_tool_calls": copy.deepcopy(turn.ai_tool_calls),
+            "ai_reasoning_details": copy.deepcopy(turn.ai_reasoning_details),
         }
         for turn in turns
     ]
 
 
 def _split_thinking_and_message(text: str) -> tuple[str | None, str | None]:
-    """Separate JSON thinking from visible message.
-
-    Returns (visible_text, thinking). If no JSON thinking found, all text is visible.
-    Handles both valid and truncated JSON objects.
-    """
+    """Separate JSON thinking from visible message; returns (visible_text, thinking)."""
     stripped = text.strip()
     if not stripped.startswith("{"):
         return text, None

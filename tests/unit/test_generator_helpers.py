@@ -237,6 +237,19 @@ class TestBuildAIToolMessage:
         assert msg["content"] == "model draft content"
         assert msg.get("reasoning") is None
 
+    def test_reasoning_details_preserved_on_message(self):
+        """Encrypted reasoning_details from the model must be placed on the message."""
+        tc = self._real_tc("tc_004", {"reasoning": "inner", "text": "Hi"})
+        enc = [{"type": "reasoning.encrypted", "data": "abc123==", "format": "google-gemini-v1"}]
+        msg = _build_ai_tool_message(
+            "Hi",
+            "tc_004",
+            tool_calls=tc,
+            reasoning_details=enc,
+        )
+        assert msg["reasoning_details"] == enc
+        assert msg.get("reasoning") is None
+
 
 class TestMigrateReasoningFields:
     def test_migrates_content_to_reasoning(self):

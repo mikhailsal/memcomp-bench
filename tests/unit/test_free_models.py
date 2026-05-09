@@ -1,8 +1,8 @@
-"""Tests for src.free_models with fake fetchers (no network)."""
+"""Tests for memcomp_bench.free_models with fake fetchers (no network)."""
 
 from __future__ import annotations
 
-from src.free_models import (
+from memcomp_bench.free_models import (
     ModelInfo,
     list_free_models,
     pick_best_free_model,

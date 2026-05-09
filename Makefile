@@ -8,8 +8,8 @@ PYTHON   ?= python3
 PYTEST    = $(PYTHON) -m pytest
 ARGS     ?=
 
-SRC_DIRS  = src/ tests/
-COV_OPTS  = --cov=src --cov-report=term-missing --cov-report=html
+SRC_DIRS  = memcomp_bench/ tests/
+COV_OPTS  = --cov=memcomp_bench --cov-report=term-missing --cov-report=html
 
 # ---------------------------------------------------------------------------
 # Help  (default target — prints all documented targets)
@@ -36,16 +36,16 @@ install: ## Install package in editable mode with test + dev dependencies
 .PHONY: generate resume reformat profiles
 
 generate: ## Generate a conversation          (ARGS="--profile vitaly -v")
-	$(PYTHON) -m src.cli generate $(ARGS)
+	$(PYTHON) -m memcomp_bench.cli generate $(ARGS)
 
 resume: ## Resume an existing conversation   (ARGS="output/conv_xxx.jsonl")
-	$(PYTHON) -m src.cli resume $(ARGS)
+	$(PYTHON) -m memcomp_bench.cli resume $(ARGS)
 
 reformat: ## Reformat markdown for a conversation (ARGS="output/conv_xxx.jsonl")
-	$(PYTHON) -m src.cli reformat $(ARGS)
+	$(PYTHON) -m memcomp_bench.cli reformat $(ARGS)
 
 profiles: ## List available human profiles
-	$(PYTHON) -m src.cli profiles
+	$(PYTHON) -m memcomp_bench.cli profiles
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -85,11 +85,11 @@ coverage-open: coverage ## Open HTML coverage report in browser
 
 .PHONY: lint typecheck format check
 
-lint: ## Run ruff linter on src and tests
+lint: ## Run ruff linter on memcomp_bench and tests
 	$(PYTHON) -m ruff check $(SRC_DIRS)
 
-typecheck: ## Run mypy type checker on src
-	$(PYTHON) -m mypy src/
+typecheck: ## Run mypy type checker on memcomp_bench
+	$(PYTHON) -m mypy memcomp_bench/
 
 format: ## Auto-format code with ruff
 	$(PYTHON) -m ruff format $(SRC_DIRS)

@@ -63,7 +63,7 @@ repos:
       - id: coverage-gate
         name: "check test coverage >= 87%"
         language: system
-        entry: python3 -m pytest tests/unit/ --cov=src --cov-fail-under=87 -q --tb=short --no-header
+        entry: python3 -m pytest tests/unit/ --cov=memcomp_bench --cov-fail-under=87 -q --tb=short --no-header
         pass_filenames: false
         always_run: true
         stages: [pre-commit]

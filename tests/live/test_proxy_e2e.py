@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from src.config import load_api_key
-from src.generator import (
+from memcomp_bench.config import load_api_key
+from memcomp_bench.generator import (
     ConversationGenerator,
     load_conversation_record,
     save_conversation,
 )
-from src.openrouter_client import OpenRouterClient
-from src.prompts import HUMAN_PROFILES
+from memcomp_bench.openrouter_client import OpenRouterClient
+from memcomp_bench.prompts import HUMAN_PROFILES
 
 pytestmark = pytest.mark.live
 

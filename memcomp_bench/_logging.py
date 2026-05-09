@@ -8,7 +8,7 @@ from typing import Any
 from rich.console import Console
 from rich.panel import Panel
 
-from src.generator_helpers import (
+from memcomp_bench.generator_helpers import (
     ConversationTurn,
     _extract_tool_call_reasoning,
     _tool_call_text_before_reasoning,

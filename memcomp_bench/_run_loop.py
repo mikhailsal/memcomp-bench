@@ -9,7 +9,7 @@ from typing import Any
 
 from rich.console import Console
 
-from src.generator_helpers import (
+from memcomp_bench.generator_helpers import (
     ConversationRecord,
     ConversationTurn,
     _build_ai_tool_message,
@@ -17,7 +17,7 @@ from src.generator_helpers import (
     _estimate_tokens,
     _uses_native_reasoning_field,
 )
-from src.prompts import make_ai_greeting_turn, reset_tool_call_counter
+from memcomp_bench.prompts import make_ai_greeting_turn, reset_tool_call_counter
 
 console = Console()
 
@@ -142,7 +142,7 @@ def _retry_first_human(gen: Any) -> tuple[str, str | None, list | None]:
 
 def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord:
     """Core conversation loop — alternates AI/human turns."""
-    from src.config import TOPIC_CHECK_INTERVAL
+    from memcomp_bench.config import TOPIC_CHECK_INTERVAL
 
     turn_number = start_turn
     accumulated_tokens = start_tokens

@@ -1,11 +1,11 @@
-"""Tests for save/load/reformat cycle in src.generator."""
+"""Tests for save/load/reformat cycle in memcomp_bench.generator."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from src.generator import (
+from memcomp_bench.generator import (
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,

@@ -13,8 +13,8 @@ import json
 import random
 from typing import Any
 
-from src.profiles import HUMAN_PROFILES, get_human_profile  # noqa: F401
-from src.prompt_templates import CONVERSATION_PLAN_PROMPT, HUMAN_SYSTEM_PROMPT_TEMPLATE  # noqa: F401
+from memcomp_bench.profiles import HUMAN_PROFILES, get_human_profile  # noqa: F401
+from memcomp_bench.prompt_templates import CONVERSATION_PLAN_PROMPT, HUMAN_SYSTEM_PROMPT_TEMPLATE  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Tool definition — matching MAI Companion protocol

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.free_models import list_free_models
+from memcomp_bench.free_models import list_free_models
 
 pytestmark = pytest.mark.network
 

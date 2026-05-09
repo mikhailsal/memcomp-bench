@@ -8,14 +8,14 @@ from pathlib import Path
 
 import pytest
 
-from src.generator import (
+from memcomp_bench.generator import (
     ConversationGenerator,
     ConversationRecord,
     load_conversation_record,
     save_conversation,
 )
-from src.openrouter_client import LLMResponse, Usage
-from src.prompts import HUMAN_PROFILES
+from memcomp_bench.openrouter_client import LLMResponse, Usage
+from memcomp_bench.prompts import HUMAN_PROFILES
 from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
 
 

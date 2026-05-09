@@ -1,11 +1,11 @@
-"""Tests for src.prompts — seed generation, prompt builders, tool-call helpers."""
+"""Tests for memcomp_bench.prompts — seed generation, prompt builders, tool-call helpers."""
 
 from __future__ import annotations
 
 import json
 from types import SimpleNamespace
 
-from src.prompts import (
+from memcomp_bench.prompts import (
     AI_TOOLS,
     HUMAN_PROFILES,
     SEED_WORDS,

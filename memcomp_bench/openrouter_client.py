@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from src.config import API_CALL_TIMEOUT, OPENROUTER_BASE_URL
+from memcomp_bench.config import API_CALL_TIMEOUT, OPENROUTER_BASE_URL
 
 
 @dataclass

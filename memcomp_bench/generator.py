@@ -15,7 +15,7 @@ from typing import Any
 from rich.console import Console
 from rich.panel import Panel
 
-from src.config import (
+from memcomp_bench.config import (
     AI_MAX_TOKENS,
     AI_MODEL,
     AI_PROVIDER,
@@ -32,7 +32,7 @@ from src.config import (
     MAX_TURNS,
     TARGET_TOKENS,
 )
-from src.generator_helpers import (
+from memcomp_bench.generator_helpers import (
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,
@@ -53,14 +53,14 @@ from src.generator_helpers import (
     _turns_to_context_rows,
     _uses_native_reasoning_field,
 )
-from src.openrouter_client import OpenRouterClient, Usage  # noqa: F401
-from src.persistence import (
+from memcomp_bench.openrouter_client import OpenRouterClient, Usage  # noqa: F401
+from memcomp_bench.persistence import (
     _write_conversation_markdown,
     load_conversation_record,
     reformat_markdown,
     save_conversation,
 )
-from src.prompts import (
+from memcomp_bench.prompts import (
     AI_TOOLS,
     CONVERSATION_PLAN_PROMPT,
     build_ai_system_prompt,
@@ -385,7 +385,7 @@ class ConversationGenerator:
 
     def _log_turn(self, turn: ConversationTurn) -> None:
         """Display turn info — compact by default, full panels in verbose mode."""
-        from src._logging import log_turn
+        from memcomp_bench._logging import log_turn
 
         log_turn(self, turn)
 
@@ -431,13 +431,13 @@ class ConversationGenerator:
 
     def _run_loop(self, start_turn: int, start_tokens: int) -> ConversationRecord:
         """Core conversation loop — alternates AI/human turns."""
-        from src._run_loop import run_loop
+        from memcomp_bench._run_loop import run_loop
 
         return run_loop(self, start_turn, start_tokens)
 
     def generate(self) -> ConversationRecord:
         """Run the full conversation generation loop."""
-        from src._run_loop import do_generate
+        from memcomp_bench._run_loop import do_generate
 
         return do_generate(self)
 
@@ -460,7 +460,7 @@ class ConversationGenerator:
         human_max_tokens_override: int | None = None,
     ) -> ConversationRecord:
         """Resume a conversation from a saved JSONL file."""
-        from src._resume import _do_resume
+        from memcomp_bench._resume import _do_resume
 
         return _do_resume(
             cls,

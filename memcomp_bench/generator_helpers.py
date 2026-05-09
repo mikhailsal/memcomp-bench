@@ -13,14 +13,14 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.config import (
+from memcomp_bench.config import (
     AI_MAX_TOKENS,
     AI_TEMPERATURE,
     HUMAN_MAX_TOKENS,
     HUMAN_TEMPERATURE,
 )
-from src.openrouter_client import Usage
-from src.prompts import make_human_tool_result
+from memcomp_bench.openrouter_client import Usage
+from memcomp_bench.prompts import make_human_tool_result
 
 _INITIAL_AI_GREETING = (
     "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."

@@ -8,7 +8,7 @@ from typing import Any
 
 from rich.console import Console
 
-from src.config import (
+from memcomp_bench.config import (
     AI_MAX_TOKENS,
     AI_PROVIDER,
     AI_REASONING,
@@ -19,7 +19,7 @@ from src.config import (
     HUMAN_TEMPERATURE,
     TARGET_TOKENS,
 )
-from src.generator_helpers import (
+from memcomp_bench.generator_helpers import (
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,
@@ -30,8 +30,8 @@ from src.generator_helpers import (
     _rebuild_ai_context_from_turns,
     _uses_native_reasoning_field,
 )
-from src.openrouter_client import OpenRouterClient
-from src.prompts import build_ai_system_prompt, set_tool_call_counter
+from memcomp_bench.openrouter_client import OpenRouterClient
+from memcomp_bench.prompts import build_ai_system_prompt, set_tool_call_counter
 
 console = Console()
 
@@ -54,7 +54,7 @@ def _do_resume(
     human_max_tokens_override: int | None = None,
 ) -> ConversationRecord:
     """Implementation of ConversationGenerator.resume()."""
-    from src.generator import _UNSET
+    from memcomp_bench.generator import _UNSET
 
     jsonl_path = Path(jsonl_path)
     base = jsonl_path.stem

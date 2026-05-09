@@ -1,4 +1,4 @@
-"""Tests for src.openrouter_client using httpx.MockTransport."""
+"""Tests for memcomp_bench.openrouter_client using httpx.MockTransport."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
-from src.openrouter_client import OpenRouterClient
+from memcomp_bench.openrouter_client import OpenRouterClient
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -11,8 +11,8 @@ from typing import Any
 
 from rich.console import Console
 
-from src.config import AI_REASONING
-from src.generator_helpers import (
+from memcomp_bench.config import AI_REASONING
+from memcomp_bench.generator_helpers import (
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,
@@ -25,7 +25,7 @@ from src.generator_helpers import (
     _turns_to_context_rows,
     _uses_native_reasoning_field,
 )
-from src.prompts import build_ai_system_prompt
+from memcomp_bench.prompts import build_ai_system_prompt
 
 console = Console()
 
@@ -119,7 +119,7 @@ def _write_conversation_markdown(f: Any, record: ConversationRecord) -> None:
 
 def load_conversation_record(jsonl_path: Path) -> ConversationRecord:
     """Load a ConversationRecord from a saved JSONL file."""
-    from src.config import AI_MAX_TOKENS, AI_TEMPERATURE, HUMAN_MAX_TOKENS, HUMAN_TEMPERATURE
+    from memcomp_bench.config import AI_MAX_TOKENS, AI_TEMPERATURE, HUMAN_MAX_TOKENS, HUMAN_TEMPERATURE
 
     turns: list[ConversationTurn] = []
     events: list[ConversationEvent] = []

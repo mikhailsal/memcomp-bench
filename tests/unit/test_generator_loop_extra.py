@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import time
 
-from src.generator import ConversationGenerator, ConversationTurn
-from src.prompts import HUMAN_PROFILES
+from memcomp_bench.generator import ConversationGenerator, ConversationTurn
+from memcomp_bench.prompts import HUMAN_PROFILES
 from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
 
 

@@ -7,7 +7,7 @@ import sys
 
 from rich.console import Console
 
-from src.config import (
+from memcomp_bench.config import (
     AI_MAX_TOKENS,
     AI_MODEL,
     AI_PROVIDER,
@@ -22,9 +22,9 @@ from src.config import (
     ensure_dirs,
     load_api_key,
 )
-from src.generator import _UNSET, ConversationGenerator, reformat_markdown, save_conversation
-from src.openrouter_client import OpenRouterClient
-from src.prompts import HUMAN_PROFILES, get_human_profile
+from memcomp_bench.generator import _UNSET, ConversationGenerator, reformat_markdown, save_conversation
+from memcomp_bench.openrouter_client import OpenRouterClient
+from memcomp_bench.prompts import HUMAN_PROFILES, get_human_profile
 
 console = Console()
 

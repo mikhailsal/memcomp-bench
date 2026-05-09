@@ -1,10 +1,10 @@
-"""Tests for private helper functions in src.generator."""
+"""Tests for private helper functions in memcomp_bench.generator."""
 
 from __future__ import annotations
 
 import json
 
-from src.generator import (
+from memcomp_bench.generator import (
     ConversationTurn,
     _build_ai_tool_message,
     _estimate_context_tokens,

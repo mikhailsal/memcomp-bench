@@ -1,4 +1,4 @@
-"""Tests for src.config and src.cli."""
+"""Tests for memcomp_bench.config and memcomp_bench.cli."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ import pytest
 class TestEnsureDirs:
     def test_creates_output_dir(self, tmp_path: Path, monkeypatch):
         out = tmp_path / "new_output"
-        monkeypatch.setattr("src.config.OUTPUT_DIR", out)
-        from src.config import ensure_dirs
+        monkeypatch.setattr("memcomp_bench.config.OUTPUT_DIR", out)
+        from memcomp_bench.config import ensure_dirs
 
         ensure_dirs()
         assert out.is_dir()
@@ -26,8 +26,8 @@ class TestEnsureDirs:
     def test_idempotent(self, tmp_path: Path, monkeypatch):
         out = tmp_path / "new_output"
         out.mkdir()
-        monkeypatch.setattr("src.config.OUTPUT_DIR", out)
-        from src.config import ensure_dirs
+        monkeypatch.setattr("memcomp_bench.config.OUTPUT_DIR", out)
+        from memcomp_bench.config import ensure_dirs
 
         ensure_dirs()
         assert out.is_dir()
@@ -37,18 +37,18 @@ class TestLoadApiKey:
     def test_returns_key_when_set(self, monkeypatch, tmp_path: Path):
         env_file = tmp_path / ".env"
         env_file.write_text("OPENROUTER_KEY=test-key-123\n")
-        monkeypatch.setattr("src.config.ENV_PATH", env_file)
+        monkeypatch.setattr("memcomp_bench.config.ENV_PATH", env_file)
         monkeypatch.setenv("OPENROUTER_KEY", "test-key-123")
-        from src.config import load_api_key
+        from memcomp_bench.config import load_api_key
 
         assert load_api_key() == "test-key-123"
 
     def test_exits_when_missing(self, monkeypatch, tmp_path: Path):
         env_file = tmp_path / ".env"
         env_file.write_text("")
-        monkeypatch.setattr("src.config.ENV_PATH", env_file)
+        monkeypatch.setattr("memcomp_bench.config.ENV_PATH", env_file)
         monkeypatch.delenv("OPENROUTER_KEY", raising=False)
-        from src.config import load_api_key
+        from memcomp_bench.config import load_api_key
 
         with pytest.raises(SystemExit):
             load_api_key()
@@ -56,9 +56,9 @@ class TestLoadApiKey:
     def test_exits_when_placeholder(self, monkeypatch, tmp_path: Path):
         env_file = tmp_path / ".env"
         env_file.write_text("OPENROUTER_KEY=your-key-here\n")
-        monkeypatch.setattr("src.config.ENV_PATH", env_file)
+        monkeypatch.setattr("memcomp_bench.config.ENV_PATH", env_file)
         monkeypatch.setenv("OPENROUTER_KEY", "your-key-here")
-        from src.config import load_api_key
+        from memcomp_bench.config import load_api_key
 
         with pytest.raises(SystemExit):
             load_api_key()
@@ -71,22 +71,22 @@ class TestLoadApiKey:
 
 class TestResolveProfile:
     def test_by_index(self):
-        from src.cli import _resolve_profile
-        from src.prompts import HUMAN_PROFILES
+        from memcomp_bench.cli import _resolve_profile
+        from memcomp_bench.prompts import HUMAN_PROFILES
 
         p = _resolve_profile("0")
         assert p["name"] == HUMAN_PROFILES[0]["name"]
 
     def test_by_name_case_insensitive(self):
-        from src.cli import _resolve_profile
-        from src.prompts import HUMAN_PROFILES
+        from memcomp_bench.cli import _resolve_profile
+        from memcomp_bench.prompts import HUMAN_PROFILES
 
         name = HUMAN_PROFILES[0]["name"]
         p = _resolve_profile(name.upper())
         assert p["name"] == name
 
     def test_unknown_exits(self):
-        from src.cli import _resolve_profile
+        from memcomp_bench.cli import _resolve_profile
 
         with pytest.raises(SystemExit):
             _resolve_profile("nonexistent_profile_xyz")
@@ -99,7 +99,7 @@ class TestResolveProfile:
 
 class TestMainDispatch:
     def test_no_args_prints_help(self, capsys):
-        from src.cli import main
+        from memcomp_bench.cli import main
 
         with pytest.raises(SystemExit) as exc:
             sys.argv = ["memcomp"]
@@ -107,7 +107,7 @@ class TestMainDispatch:
         assert exc.value.code == 1
 
     def test_profiles_command(self, capsys):
-        from src.cli import main
+        from memcomp_bench.cli import main
 
         sys.argv = ["memcomp", "profiles"]
         main()
@@ -115,27 +115,27 @@ class TestMainDispatch:
         assert "Marcus" in out or "Anya" in out or len(out) > 0
 
     def test_generate_calls_handler(self, monkeypatch):
-        from src.cli import main
+        from memcomp_bench.cli import main
 
         called = {}
 
         def fake_generate(args):
             called["generate"] = True
 
-        monkeypatch.setattr("src.cli.cmd_generate", fake_generate)
+        monkeypatch.setattr("memcomp_bench.cli.cmd_generate", fake_generate)
         sys.argv = ["memcomp", "generate", "--profile", "0"]
         main()
         assert called.get("generate") is True
 
     def test_resume_calls_handler(self, monkeypatch, tmp_path):
-        from src.cli import main
+        from memcomp_bench.cli import main
 
         called = {}
 
         def fake_resume(args):
             called["resume"] = True
 
-        monkeypatch.setattr("src.cli.cmd_resume", fake_resume)
+        monkeypatch.setattr("memcomp_bench.cli.cmd_resume", fake_resume)
         fake_file = tmp_path / "conv.jsonl"
         fake_file.touch()
         sys.argv = ["memcomp", "resume", str(fake_file)]
@@ -143,14 +143,14 @@ class TestMainDispatch:
         assert called.get("resume") is True
 
     def test_reformat_calls_handler(self, monkeypatch, tmp_path):
-        from src.cli import main
+        from memcomp_bench.cli import main
 
         called = {}
 
         def fake_reformat(args):
             called["reformat"] = True
 
-        monkeypatch.setattr("src.cli.cmd_reformat", fake_reformat)
+        monkeypatch.setattr("memcomp_bench.cli.cmd_reformat", fake_reformat)
         fake_file = tmp_path / "conv.jsonl"
         fake_file.touch()
         sys.argv = ["memcomp", "reformat", str(fake_file)]
@@ -164,7 +164,7 @@ class TestCmdReformatDirect:
     def test_reformat_produces_md(self, monkeypatch, tmp_path):
         import json
 
-        from src.generator import ConversationRecord, ConversationTurn, save_conversation
+        from memcomp_bench.generator import ConversationRecord, ConversationTurn, save_conversation
 
         profile = {"name": "TestUser", "backstory": "A tester."}
         record = ConversationRecord(
@@ -202,7 +202,7 @@ class TestCmdReformatDirect:
 
         from argparse import Namespace
 
-        from src.cli import cmd_reformat
+        from memcomp_bench.cli import cmd_reformat
 
         cmd_reformat(Namespace(file=str(jsonl_path)))
         assert md_path.read_text() != "CORRUPTED"
@@ -215,8 +215,8 @@ class TestCmdGenerateIntegration:
     def test_cmd_generate_runs(self, monkeypatch, tmp_path):
         monkeypatch.setattr(time, "sleep", lambda _: None)
         output_dir = tmp_path / "output"
-        monkeypatch.setattr("src.cli.OUTPUT_DIR", output_dir)
-        monkeypatch.setattr("src.config.ENV_PATH", tmp_path / ".env")
+        monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", output_dir)
+        monkeypatch.setattr("memcomp_bench.config.ENV_PATH", tmp_path / ".env")
         monkeypatch.setenv("OPENROUTER_KEY", "test-key-for-generate")
 
         from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
@@ -249,13 +249,13 @@ class TestCmdGenerateIntegration:
         )
 
         monkeypatch.setattr(
-            "src.cli.OpenRouterClient",
+            "memcomp_bench.cli.OpenRouterClient",
             lambda key: fake,
         )
 
         from argparse import Namespace
 
-        from src.cli import cmd_generate
+        from memcomp_bench.cli import cmd_generate
 
         args = Namespace(
             profile="0",
@@ -284,11 +284,11 @@ class TestCmdResumeIntegration:
 
     def test_cmd_resume_runs(self, monkeypatch, tmp_path):
         monkeypatch.setattr(time, "sleep", lambda _: None)
-        monkeypatch.setattr("src.config.ENV_PATH", tmp_path / ".env")
-        monkeypatch.setattr("src.cli.OUTPUT_DIR", tmp_path / "output_resume")
+        monkeypatch.setattr("memcomp_bench.config.ENV_PATH", tmp_path / ".env")
+        monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", tmp_path / "output_resume")
         monkeypatch.setenv("OPENROUTER_KEY", "test-key-for-resume")
 
-        from src.generator import ConversationRecord, ConversationTurn, save_conversation
+        from memcomp_bench.generator import ConversationRecord, ConversationTurn, save_conversation
 
         profile = {"name": "Marcus", "backstory": "A tester."}
         record = ConversationRecord(
@@ -335,7 +335,7 @@ class TestCmdResumeIntegration:
 
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        monkeypatch.setattr("src.config.OUTPUT_DIR", output_dir)
+        monkeypatch.setattr("memcomp_bench.config.OUTPUT_DIR", output_dir)
         jsonl_path = save_conversation(record, output_dir)
 
         from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
@@ -361,13 +361,13 @@ class TestCmdResumeIntegration:
                 )
 
         monkeypatch.setattr(
-            "src.cli.OpenRouterClient",
+            "memcomp_bench.cli.OpenRouterClient",
             lambda key: fake,
         )
 
         from argparse import Namespace
 
-        from src.cli import cmd_resume
+        from memcomp_bench.cli import cmd_resume
 
         args = Namespace(
             file=str(jsonl_path),

@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
-from src.openrouter_client import LLMResponse, OpenRouterClient, Usage
+from memcomp_bench.openrouter_client import LLMResponse, OpenRouterClient, Usage
 
 # ---------------------------------------------------------------------------
 # FakeChatClient — scripted OpenRouterClient for offline tests
@@ -135,7 +135,7 @@ def live_proxy_or_skip():
     if os.environ.get("MEMCOMP_BENCH_LIVE") != "1":
         pytest.skip("MEMCOMP_BENCH_LIVE not set")
 
-    from src.config import OPENROUTER_BASE_URL
+    from memcomp_bench.config import OPENROUTER_BASE_URL
 
     try:
         key = os.environ.get("OPENROUTER_KEY", "")

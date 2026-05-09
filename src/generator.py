@@ -1058,7 +1058,11 @@ class ConversationGenerator:
     def _generate_conversation_plan(self) -> str:
         """Generate the human's conversation plan before starting the dialogue."""
         console.print("  [dim]Generating conversation plan...[/dim]")
-        plan_prompt = CONVERSATION_PLAN_PROMPT.format(**self.human_profile)
+        plan_prompt_override = self.human_profile.get("plan_prompt_override")
+        if plan_prompt_override:
+            plan_prompt = plan_prompt_override
+        else:
+            plan_prompt = CONVERSATION_PLAN_PROMPT.format(**self.human_profile)
         if self.language != "english":
             plan_prompt += f"\n\nIMPORTANT: Write the entire plan in {self.language.upper()}."
         plan_messages = [

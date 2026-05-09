@@ -23,6 +23,7 @@ from memcomp_bench.generator_helpers import (
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,
+    _enforce_reasoning_before_text,
     _estimate_context_tokens,
     _is_restorable_ai_context,
     _migrate_assistant_reasoning_fields,
@@ -213,6 +214,11 @@ def _restore_ai_context(jsonl_path: Path, turns: list, cfg: dict) -> list[dict[s
         console.print(
             f"  [dim]Normalized Unicode escapes in context (saved ~{chars_saved:,} chars / ~{chars_saved // 4:,} tokens)[/dim]"
         )
+
+    reordered = _enforce_reasoning_before_text(ai_messages)
+    if reordered > 0:
+        console.print(f"  [dim]Fixed reasoning/text order in {reordered} tool call(s)[/dim]")
+
     return ai_messages
 
 

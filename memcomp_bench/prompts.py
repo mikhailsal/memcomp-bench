@@ -154,6 +154,14 @@ _TOOL_ROLE_SUFFIX = (
     'and how this connects to your evolving identity"}\n'
     "Alternatively, you can pass your reasoning inside the tool call itself "
     "using the optional 'reasoning' parameter of write_message_to_human.\n\n"
+    "CRITICAL ORDERING RULE: When using the 'reasoning' parameter inside the tool call, "
+    "you MUST write 'reasoning' BEFORE 'text' in the arguments. "
+    "Think first, then speak. Never write the reply before formulating your thoughts.\n\n"
+    'CORRECT: {"reasoning": "I think about what they said...", "text": "My response"}\n'
+    'WRONG: {"text": "My response", "reasoning": "I think about what they said..."}\n\n'
+    "The reasoning must genuinely precede your reply — it represents your thought process "
+    "BEFORE you decide what to say. Writing text first and reasoning after is backwards "
+    "and defeats the purpose of reflective inner monologue.\n\n"
     "This is your PRIVATE inner monologue — the human cannot see it. "
     "Use it to reflect deeply, process your emotions, "
     "consider what to say, and track your own development."

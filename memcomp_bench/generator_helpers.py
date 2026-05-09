@@ -184,6 +184,46 @@ def _normalize_tool_arguments(messages: list[dict[str, Any]]) -> int:
     return saved
 
 
+def _enforce_reasoning_before_text(messages: list[dict[str, Any]]) -> int:
+    """Re-order tool call argument keys so 'reasoning' always precedes 'text'.
+
+    When the model writes {"text": "...", "reasoning": "..."} the JSON key order
+    signals that it produced the reply before the inner monologue. This function
+    normalizes all such instances to {"reasoning": "...", "text": "..."} so that
+    the context history always presents the correct example to the model.
+
+    Returns the number of tool calls that were reordered.
+    """
+    reordered = 0
+    for msg in messages:
+        if not msg.get("tool_calls"):
+            continue
+        for tc in msg["tool_calls"]:
+            func = tc.get("function", {})
+            if func.get("name") != "write_message_to_human":
+                continue
+            args_str = func.get("arguments", "")
+            if not args_str:
+                continue
+            try:
+                parsed = json.loads(args_str)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if "reasoning" not in parsed or "text" not in parsed:
+                continue
+            keys = list(parsed.keys())
+            text_pos = keys.index("text")
+            reasoning_pos = keys.index("reasoning")
+            if text_pos < reasoning_pos:
+                ordered = {"reasoning": parsed["reasoning"], "text": parsed["text"]}
+                for k, v in parsed.items():
+                    if k not in ("reasoning", "text"):
+                        ordered[k] = v
+                func["arguments"] = json.dumps(ordered, ensure_ascii=False)
+                reordered += 1
+    return reordered
+
+
 def _estimate_tokens(text: str) -> int:
     """Rough token estimate: ~4 chars per token."""
     return len(text) // 4 if text else 0

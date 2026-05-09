@@ -286,7 +286,7 @@ def _build_ai_tool_message(
     }
     if assistant_reasoning:
         message["reasoning"] = assistant_reasoning
-    elif thinking:
+    elif thinking and not tool_calls:
         if use_reasoning_field and not _looks_like_json_object(thinking):
             message["reasoning"] = thinking
         else:

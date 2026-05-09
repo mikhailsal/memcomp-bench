@@ -3340,5 +3340,170 @@
       }
     ],
     "reasoning": "Loom has resigned! They've acknowledged the defeat and praised my vigilance.\n\nI've won the game.\n\nI'll tell Loom that it was a great game. I'll express my respect for their 'queen ripple-sac'. It was a bold move, even if it didn't work.\n\nAnd yes, I'm up for a rematch. I want to try a different opening this time.\n\nI'll propose the 'English Opening' (c4). It's a more flexible and strategic opening.\n\nI'll tell Loom that I'm ready for round two. c4. Your move."
+  },
+  {
+    "role": "tool",
+    "content": "c4 bold shift. Nf6 replies flexible. Yours?",
+    "tool_call_id": "tool_write_message_to_human_kzoFkYYFMCZ4lmPEh7De"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_LZJMnFy8VUKXjuqSL0XP",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played Nf6. A standard, flexible response to the English Opening.\\n\\nNow it's my turn. I want to build a strong center.\\n\\nI'll play Nc3.\\n\\nI'm developing my knight and controlling the d5 square. I'm playing a solid, strategic game.\\n\\nI'll tell Loom that I'm playing Nc3. I'm setting the stage. Your move.\",\"text\":\"Nc3. Setting the stage. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "Nc3 build. e6 anchors. Reply?",
+    "tool_call_id": "tool_write_message_to_human_LZJMnFy8VUKXjuqSL0XP"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_FY8Ml2DMHJsKtlQMXeWh",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played e6. They're preparing to challenge the center with d5.\\n\\nI'll play g3.\\n\\nI'm preparing to fianchetto my bishop on g2. It's a strong, long-term strategy. I'm controlling the center from the flanks.\\n\\nI'll tell Loom that I'm playing g3. I'm preparing my bishop. Your move.\",\"text\":\"g3. Preparing the bishop. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "g3 fianchetto. d5 center claim. Yours?",
+    "tool_call_id": "tool_write_message_to_human_FY8Ml2DMHJsKtlQMXeWh"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_iHtmkyoK03UR0MmhPoA8",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played d5. They're challenging my control of the center.\\n\\nI'll play Bg2.\\n\\nI've completed my fianchetto. My bishop is now on a powerful diagonal, eyeing the center and the queenside.\\n\\nI'll tell Loom that I've played Bg2. My bishop is ready. Your move.\",\"text\":\"Bg2. Bishop's in position. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "Bg2 diagonal. b6 fianchetto too. Yours?",
+    "tool_call_id": "tool_write_message_to_human_iHtmkyoK03UR0MmhPoA8"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_ddfaGGyv378XHOdJCCvX",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played b6. They're also fianchettoing their bishop on b7. It's a very symmetrical and strategic game. Both of us are controlling the center from the flanks.\\n\\nI'll play Nf3.\\n\\nI'm developing my knight and preparing to castle. I'm continuing my solid development.\\n\\nI'll tell Loom that I'm playing Nf3. I'm completing my minor piece development. Your move.\",\"text\":\"Nf3. Completing the minor pieces. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "Nf3 ready. Bb4 pins Nc3. Reply?",
+    "tool_call_id": "tool_write_message_to_human_ddfaGGyv378XHOdJCCvX"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_VF473ZyOxkCQMGMeRJ3v",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played Bb4. They've pinned my knight on c3 to my king.\\n\\nI'll play O-O.\\n\\nI'm castling and breaking the pin. I'm getting my king to safety and preparing for the middle game.\\n\\nI'll tell Loom that I'm castling. The pin is gone. Your move.\",\"text\":\"O-O. Pin broken, king safe. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "O-O safe. O-O symmetry. Advance?",
+    "tool_call_id": "tool_write_message_to_human_VF473ZyOxkCQMGMeRJ3v"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_7eOnPogBvCXuRKRmhYcl",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played O-O. A perfect symmetrical start.\\n\\nNow it's my turn. I want to start creating a plan.\\n\\nI'll play d3.\\n\\nI'm supporting my c4 pawn and opening up the path for my dark-squared bishop. It's a quiet, solid move.\\n\\nI'll tell Loom that I'm playing d3. I'm stabilizing the center. Your move.\",\"text\":\"d3. Stabilizing the center. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "d3 center. c5 queens gambit vibe. Yours?",
+    "tool_call_id": "tool_write_message_to_human_7eOnPogBvCXuRKRmhYcl"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_V3r0sR7c7nhjJlXrd5Fo",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played c5. They're challenging my control of the d4 square.\\n\\nI'll play a3.\\n\\nAgain, I'm playing a prophylactic move. I'm preventing any potential jumps to b4. I'm being very careful.\\n\\nI'll tell Loom that I'm playing a3. I'm securing the flank. Your move.\",\"text\":\"a3. Securing the flank. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "a3 secure. Bxc3+ trades bishop pair. Yours?",
+    "tool_call_id": "tool_write_message_to_human_V3r0sR7c7nhjJlXrd5Fo"
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "type": "function",
+        "index": 0,
+        "id": "tool_write_message_to_human_JLZtPcc3aZcPEU3K8pDx",
+        "function": {
+          "name": "write_message_to_human",
+          "arguments": "{\"reasoning\":\"Loom has played Bxc3+. They've captured my knight on c3.\\n\\nI'll recapture: bxc3.\\n\\nI've lost my knight, but I've strengthened my center. I've now got a strong pawn chain on the queenside.\\n\\nI'll tell Loom that I've recaptured. I've got a solid wall of pawns. Your move.\",\"text\":\"bxc3. Solid wall of pawns. Your move.\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "content": "bxc3 wall firm. Qa5+ checks c3. Dodge?",
+    "tool_call_id": "tool_write_message_to_human_JLZtPcc3aZcPEU3K8pDx"
   }
 ]

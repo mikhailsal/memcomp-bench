@@ -23,10 +23,6 @@ from memcomp_bench.generator import (
     _uses_native_reasoning_field,
 )
 
-# ---------------------------------------------------------------------------
-# _heal_tool_call_names — 4 strategies
-# ---------------------------------------------------------------------------
-
 
 class TestHealToolCallNames:
     def _tc(self, name: str) -> list[dict]:
@@ -72,11 +68,6 @@ class TestHealToolCallNames:
         assert _heal_tool_call_names([{}]) == 0
 
 
-# ---------------------------------------------------------------------------
-# _normalize_tool_arguments
-# ---------------------------------------------------------------------------
-
-
 class TestNormalizeToolArguments:
     def test_unicode_escape_shrinks(self):
         cyrillic = json.dumps({"text": "Привет"}, ensure_ascii=True)
@@ -103,11 +94,6 @@ class TestNormalizeToolArguments:
         assert _normalize_tool_arguments(msgs) == 0
 
 
-# ---------------------------------------------------------------------------
-# _estimate_tokens / _estimate_context_tokens
-# ---------------------------------------------------------------------------
-
-
 class TestEstimateTokens:
     def test_basic_estimate(self):
         assert _estimate_tokens("abcd") == 1
@@ -129,11 +115,6 @@ class TestEstimateTokens:
         assert _estimate_context_tokens(msgs) == 30  # 10 + 10 + 10
 
 
-# ---------------------------------------------------------------------------
-# _uses_native_reasoning_field / _looks_like_json_object
-# ---------------------------------------------------------------------------
-
-
 class TestSmallHelpers:
     def test_uses_reasoning_true(self):
         assert _uses_native_reasoning_field({"effort": "minimal"}) is True
@@ -148,11 +129,6 @@ class TestSmallHelpers:
         assert _looks_like_json_object("hello") is False
         assert _looks_like_json_object(None) is False
         assert _looks_like_json_object("") is False
-
-
-# ---------------------------------------------------------------------------
-# _build_ai_tool_message
-# ---------------------------------------------------------------------------
 
 
 class TestBuildAIToolMessage:
@@ -208,10 +184,58 @@ class TestBuildAIToolMessage:
         )
         assert msg["reasoning"] == "from reasoning field"
 
+    @staticmethod
+    def _real_tc(tc_id: str, args: dict) -> list[dict]:
+        return [
+            {
+                "id": tc_id,
+                "type": "function",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps(args, ensure_ascii=False),
+                },
+            }
+        ]
 
-# ---------------------------------------------------------------------------
-# _migrate_assistant_reasoning_fields
-# ---------------------------------------------------------------------------
+    def test_tool_call_reasoning_not_duplicated_to_message_fields(self):
+        """Tool-call reasoning must NOT leak into message-level fields."""
+        tc = self._real_tc("tc_001", {"reasoning": "inner thought", "text": "Hello!"})
+        msg = _build_ai_tool_message(
+            "Hello!",
+            "tc_001",
+            thinking="inner thought",
+            tool_calls=tc,
+            use_reasoning_field=True,
+        )
+        assert msg["content"] is None, "tool-call reasoning must not leak into content"
+        assert msg.get("reasoning") is None, "tool-call reasoning must not leak into reasoning"
+
+    def test_tool_calls_with_native_reasoning_preserved(self):
+        """Native reasoning from the model should be preserved on the message."""
+        tc = self._real_tc("tc_002", {"text": "Hi"})
+        msg = _build_ai_tool_message(
+            "Hi",
+            "tc_002",
+            thinking="display thinking",
+            assistant_reasoning="model native reasoning",
+            tool_calls=tc,
+            use_reasoning_field=True,
+        )
+        assert msg["reasoning"] == "model native reasoning"
+
+    def test_tool_calls_with_native_content_preserved(self):
+        """Native content from the model should be preserved on the message."""
+        tc = self._real_tc("tc_003", {"text": "Hi"})
+        msg = _build_ai_tool_message(
+            "Hi",
+            "tc_003",
+            thinking="display thinking",
+            assistant_content="model draft content",
+            tool_calls=tc,
+            use_reasoning_field=True,
+        )
+        assert msg["content"] == "model draft content"
+        assert msg.get("reasoning") is None
 
 
 class TestMigrateReasoningFields:
@@ -260,11 +284,6 @@ class TestMigrateReasoningFields:
         assert _migrate_assistant_reasoning_fields(msgs, use_reasoning_field=True) == 0
 
 
-# ---------------------------------------------------------------------------
-# _is_restorable_ai_context
-# ---------------------------------------------------------------------------
-
-
 class TestIsRestorableAIContext:
     def test_valid_context(self):
         ctx = [
@@ -298,11 +317,6 @@ class TestIsRestorableAIContext:
         assert _is_restorable_ai_context(None) is False
 
 
-# ---------------------------------------------------------------------------
-# _rebuild_ai_context_from_turns
-# ---------------------------------------------------------------------------
-
-
 class TestRebuildAIContext:
     def test_basic_rebuild(self):
         turns = [
@@ -323,11 +337,6 @@ class TestRebuildAIContext:
         roles = [m["role"] for m in ctx[2:]]
         assert "assistant" in roles
         assert "tool" in roles
-
-
-# ---------------------------------------------------------------------------
-# _split_thinking_and_message
-# ---------------------------------------------------------------------------
 
 
 class TestSplitThinkingAndMessage:
@@ -352,11 +361,6 @@ class TestSplitThinkingAndMessage:
         assert think is not None
 
 
-# ---------------------------------------------------------------------------
-# _format_thinking_markdown
-# ---------------------------------------------------------------------------
-
-
 class TestFormatThinkingMarkdown:
     def test_default_label(self):
         result = _format_thinking_markdown("line1\nline2")
@@ -367,11 +371,6 @@ class TestFormatThinkingMarkdown:
     def test_custom_label(self):
         result = _format_thinking_markdown("text", label="Custom:")
         assert "> Custom:" in result
-
-
-# ---------------------------------------------------------------------------
-# _extract_tool_call_reasoning / _tool_call_text_before_reasoning
-# ---------------------------------------------------------------------------
 
 
 class TestToolCallReasoningExtraction:
@@ -426,11 +425,6 @@ class TestToolCallReasoningExtraction:
     def test_text_before_reasoning_no_tool_calls(self):
         turn = ConversationTurn(turn_number=1, speaker="ai", visible_text="hi")
         assert _tool_call_text_before_reasoning(turn) is False
-
-
-# ---------------------------------------------------------------------------
-# _turns_to_context_rows
-# ---------------------------------------------------------------------------
 
 
 class TestTurnsToContextRows:

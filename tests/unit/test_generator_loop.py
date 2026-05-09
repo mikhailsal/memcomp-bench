@@ -162,6 +162,50 @@ class TestGenerateLoop:
         assert record.finished_at != ""
         assert record.started_at != ""
 
+    def test_ai_context_preserves_model_response_shape(self, monkeypatch):
+        """History must not inject reasoning/content when the model only used tool-call args."""
+        monkeypatch.setattr(time, "sleep", lambda _: None)
+        client = FakeChatClient()
+        client.enqueue(make_plain_response("Plan: Talk about life."))
+        for tc_id, reasoning, text, ptok in [
+            ("tc_g001", "First greeting thought", "Hey there!", 100),
+            ("tc_a001", "Thinking about the human", "Nice to meet you too!", 200),
+        ]:
+            args = json.dumps({"reasoning": reasoning, "text": text})
+            client.enqueue(
+                LLMResponse(
+                    content=None,
+                    tool_calls=[
+                        {
+                            "id": tc_id,
+                            "type": "function",
+                            "function": {"name": "write_message_to_human", "arguments": args},
+                        }
+                    ],
+                    reasoning=None,
+                    usage=Usage(prompt_tokens=ptok, completion_tokens=20),
+                    finish_reason="tool_calls",
+                    raw={},
+                )
+            )
+            if tc_id == "tc_g001":
+                client.enqueue(make_plain_response("Hi! Nice to meet you."))
+
+        gen = ConversationGenerator(
+            client,
+            HUMAN_PROFILES[0],
+            target_tokens=200,
+            max_turns=4,
+        )
+        gen.generate()
+
+        ai_msgs = [m for m in gen._ai_messages if m.get("role") == "assistant"]
+        assert len(ai_msgs) >= 2
+        for msg in ai_msgs:
+            assert msg.get("tool_calls"), "All assistant msgs should have tool_calls"
+            assert msg.get("reasoning") is None, f"reasoning leaked: {msg.get('reasoning')!r}"
+            assert msg.get("content") is None, f"content leaked: {msg.get('content')!r}"
+
 
 class TestResumeLoop:
     """Test resume() from a saved JSONL file."""

@@ -121,6 +121,7 @@ class TestCheckTopicStaleness:
         gen._check_topic_staleness(turn_number=10)
         topic_events = [e for e in gen._record.events if e.event_type == "topic_judge"]
         assert len(topic_events) >= 1
+        assert topic_events[-1].nudge_injected is True
 
     def test_changed_topic_no_nudge(self, monkeypatch):
         monkeypatch.setattr(time, "sleep", lambda _: None)
@@ -158,6 +159,7 @@ class TestCheckTopicStaleness:
         topic_events = [e for e in gen._record.events[events_before:] if e.event_type == "topic_judge"]
         assert len(topic_events) == 1
         assert topic_events[0].topic_changed is True
+        assert topic_events[0].nudge_injected is None
 
 
 class TestLogTurnVerboseBranches:
@@ -188,7 +190,7 @@ class TestLogTurnVerboseBranches:
         gen.generate()
         return gen
 
-    def test_verbose_ai_thinking_json_reasoning(self, monkeypatch):
+    def test_verbose_ai_thinking_json_reasoning(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
             turn_number=10,
@@ -197,8 +199,10 @@ class TestLogTurnVerboseBranches:
             ai_thinking='{"reasoning": "deep thought"}',
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "deep thought" in captured.out
 
-    def test_verbose_ai_thinking_json_thoughts(self, monkeypatch):
+    def test_verbose_ai_thinking_json_thoughts(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
             turn_number=10,
@@ -207,8 +211,11 @@ class TestLogTurnVerboseBranches:
             ai_thinking='{"thoughts": "old format"}',
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "old format" in captured.out
+        assert '{"thoughts":' not in captured.out
 
-    def test_verbose_ai_thinking_plain(self, monkeypatch):
+    def test_verbose_ai_thinking_plain(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
             turn_number=10,
@@ -217,8 +224,10 @@ class TestLogTurnVerboseBranches:
             ai_thinking="just plain text",
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "just plain text" in captured.out
 
-    def test_verbose_human_with_reasoning(self, monkeypatch):
+    def test_verbose_human_with_reasoning(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
             turn_number=11,
@@ -227,8 +236,10 @@ class TestLogTurnVerboseBranches:
             human_reasoning="thinking deeply about this",
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "thinking deeply about this" in captured.out
 
-    def test_nonverbose_human_long_text(self, monkeypatch):
+    def test_nonverbose_human_long_text(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         gen.verbose = False
         turn = ConversationTurn(
@@ -237,8 +248,11 @@ class TestLogTurnVerboseBranches:
             visible_text="A" * 100,
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "A" * 80 in captured.out
+        assert "…" in captured.out
 
-    def test_nonverbose_ai(self, monkeypatch):
+    def test_nonverbose_ai(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         gen.verbose = False
         turn = ConversationTurn(
@@ -247,8 +261,10 @@ class TestLogTurnVerboseBranches:
             visible_text="Short reply",
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "Short reply" in captured.out
 
-    def test_verbose_ai_inline_content(self, monkeypatch):
+    def test_verbose_ai_inline_content(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
             turn_number=14,
@@ -257,8 +273,10 @@ class TestLogTurnVerboseBranches:
             ai_content="inline draft",
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "inline draft" in captured.out
 
-    def test_verbose_ai_text_first_with_tool_reasoning(self, monkeypatch):
+    def test_verbose_ai_text_first_with_tool_reasoning(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
         args = json.dumps({"text": "Reply", "reasoning": "inner"})
         turn = ConversationTurn(
@@ -277,10 +295,14 @@ class TestLogTurnVerboseBranches:
             ai_content="draft content",
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "native reasoning" in captured.out
+        assert "inner" in captured.out
+        assert "draft content" in captured.out
 
-    def test_verbose_ai_text_first_thinking_only(self, monkeypatch):
+    def test_verbose_ai_text_first_thinking_only(self, monkeypatch, capsys):
         gen = self._make_gen(monkeypatch)
-        args = json.dumps({"text": "Reply", "reasoning": "inner"})
+        args = '{"text": "Reply", "reasoning": ""}'
         turn = ConversationTurn(
             turn_number=16,
             speaker="ai",
@@ -296,3 +318,5 @@ class TestLogTurnVerboseBranches:
             ai_thinking="fallback thinking",
         )
         gen._log_turn(turn)
+        captured = capsys.readouterr()
+        assert "fallback thinking" in captured.out

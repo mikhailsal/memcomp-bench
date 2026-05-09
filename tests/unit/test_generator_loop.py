@@ -310,6 +310,14 @@ class TestResumeLoop:
         )
         assert len(record.turns) >= 2
 
+        # Verify the context was rebuilt correctly
+        ai_calls = [c for c in resume_client.call_log if "write_message_to_human" in str(c.get("tools", ""))]
+        assert len(ai_calls) > 0
+        ai_call_messages = ai_calls[0]["messages"]
+        assert ai_call_messages[0]["role"] == "system"
+        # The scripted conversation has 8 turns, which means multiple messages in the context.
+        assert len(ai_call_messages) > 5
+
     def test_resume_missing_jsonl_raises(self, tmp_output_dir: Path):
         fake_client = FakeChatClient()
         with pytest.raises(FileNotFoundError):
@@ -322,7 +330,7 @@ class TestResumeLoop:
 class TestVerboseMode:
     """Exercise the verbose _log_turn branches."""
 
-    def test_verbose_generate(self, monkeypatch):
+    def test_verbose_generate(self, monkeypatch, capsys):
         monkeypatch.setattr(time, "sleep", lambda _: None)
         client = _scripted_client_for_generate()
         profile = HUMAN_PROFILES[0]
@@ -337,7 +345,13 @@ class TestVerboseMode:
         record = gen.generate()
         assert len(record.turns) >= 2
 
-    def test_verbose_with_reasoning_fields(self, monkeypatch):
+        captured = capsys.readouterr()
+        # In verbose mode, it should print panels with borders, e.g. "╭─" or similar,
+        # or at least the titles like "Conversation plan" or "AI thinking"
+        assert "Conversation plan" in captured.out
+        assert "turn 1" in captured.out  # Only printed in verbose mode's panel title
+
+    def test_verbose_with_reasoning_fields(self, monkeypatch, capsys):
         """Exercises the reasoning display paths in _log_turn."""
         monkeypatch.setattr(time, "sleep", lambda _: None)
         client = FakeChatClient()
@@ -382,3 +396,9 @@ class TestVerboseMode:
         )
         record = gen.generate()
         assert len(record.turns) >= 2
+
+        captured = capsys.readouterr()
+        assert "human thinking" in captured.out
+        assert "inner monologue" in captured.out
+        assert "draft content" in captured.out
+        assert "native reasoning" in captured.out

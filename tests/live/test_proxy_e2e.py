@@ -98,7 +98,7 @@ class TestProxyE2E:
                 target_tokens=600,
                 verbose=False,
             )
-            # Should have at least as many turns as original
-            assert len(resumed.turns) >= len(record.turns)
+            # Should have generated more turns
+            assert len(resumed.turns) > len(record.turns)
         finally:
             resume_client.close()

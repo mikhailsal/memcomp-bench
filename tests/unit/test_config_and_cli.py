@@ -384,3 +384,6 @@ class TestCmdResumeIntegration:
             verbose=False,
         )
         cmd_resume(args)
+
+        # Verify that the fake client was called
+        assert len(fake.call_log) > 0

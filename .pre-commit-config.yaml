@@ -5,6 +5,7 @@
 # All tunables are grouped here for easy adjustment:
 #   - Coverage threshold  → coverage-gate args (--cov-fail-under)
 #   - Max file length     → max-file-length entry (MAX=500)
+#   - Max function length → max-function-length entry (--max=65)
 #   - Max file size       → check-added-large-files args (--maxkb)
 #
 # Run `make hooks-run` to execute all hooks against the full repo.
@@ -55,6 +56,15 @@ repos:
         name: "check max file length (500 lines)"
         language: system
         entry: bash -c 'MAX=500; status=0; for f in $(git ls-files "*.py"); do n=$(wc -l < "$f"); if [ "$n" -gt "$MAX" ]; then echo "FAIL  $f ($n lines > $MAX)"; status=1; fi; done; exit $status'
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # ---- Max function/method length (AST-based, ~P95 + margin)
+      - id: max-function-length
+        name: "check max function length (65 lines)"
+        language: system
+        entry: python3 scripts/check_function_length.py --max 65
         pass_filenames: false
         always_run: true
         stages: [pre-commit]

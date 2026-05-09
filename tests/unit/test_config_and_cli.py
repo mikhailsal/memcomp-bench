@@ -209,6 +209,43 @@ class TestCmdReformatDirect:
         assert "TestUser" in md_path.read_text()
 
 
+def _make_generate_args(**overrides):
+    """Build a Namespace for cmd_generate with sensible defaults."""
+    from argparse import Namespace
+
+    defaults = dict(
+        profile="0",
+        ai_model="test/ai",
+        human_model="test/human",
+        target_tokens=200,
+        language="english",
+        companion_mode="honest",
+        verbose=False,
+        provider=None,
+        human_provider=None,
+        ai_temperature=None,
+        human_temperature=None,
+        ai_max_tokens=None,
+        human_max_tokens=None,
+    )
+    defaults.update(overrides)
+    return Namespace(**defaults)
+
+
+def _make_generate_client():
+    """Build a FakeChatClient pre-loaded for a cmd_generate run."""
+    from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
+
+    fake = FakeChatClient()
+    fake.enqueue(make_plain_response("Plan."))
+    fake.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
+    fake.enqueue(make_plain_response("Hey!"))
+    fake.enqueue(make_tool_call_response("Hello!", tool_call_id="wmth00002", prompt_tokens=600, completion_tokens=30))
+    fake.enqueue(make_plain_response("More."))
+    fake.enqueue(make_tool_call_response("Done!", tool_call_id="wmth00003", prompt_tokens=700, completion_tokens=30))
+    return fake
+
+
 class TestCmdGenerateIntegration:
     """Test cmd_generate with a FakeChatClient to exercise the handler body."""
 
@@ -219,64 +256,88 @@ class TestCmdGenerateIntegration:
         monkeypatch.setattr("memcomp_bench.config.ENV_PATH", tmp_path / ".env")
         monkeypatch.setenv("OPENROUTER_KEY", "test-key-for-generate")
 
-        from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
-
-        fake = FakeChatClient()
-        # plan
-        fake.enqueue(make_plain_response("Plan."))
-        # AI greeting
-        fake.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
-        # Human
-        fake.enqueue(make_plain_response("Hey!"))
-        # AI
-        fake.enqueue(
-            make_tool_call_response(
-                "Hello!",
-                tool_call_id="wmth00002",
-                prompt_tokens=600,
-                completion_tokens=30,
-            )
-        )
-        # Extra buffer
-        fake.enqueue(make_plain_response("More."))
-        fake.enqueue(
-            make_tool_call_response(
-                "Done!",
-                tool_call_id="wmth00003",
-                prompt_tokens=700,
-                completion_tokens=30,
-            )
-        )
-
-        monkeypatch.setattr(
-            "memcomp_bench.cli.OpenRouterClient",
-            lambda key: fake,
-        )
-
-        from argparse import Namespace
+        fake = _make_generate_client()
+        monkeypatch.setattr("memcomp_bench.cli.OpenRouterClient", lambda key: fake)
 
         from memcomp_bench.cli import cmd_generate
 
-        args = Namespace(
-            profile="0",
-            ai_model="test/ai",
-            human_model="test/human",
-            target_tokens=200,
-            language="english",
-            companion_mode="honest",
-            verbose=False,
-            provider=None,
-            human_provider=None,
-            ai_temperature=None,
-            human_temperature=None,
-            ai_max_tokens=None,
-            human_max_tokens=None,
-        )
-        cmd_generate(args)
+        cmd_generate(_make_generate_args())
 
         assert output_dir.exists()
         jsonl_files = list(output_dir.glob("*.jsonl"))
         assert len(jsonl_files) >= 1
+
+
+def _make_resume_record():
+    """Build a minimal saved conversation record for resume tests."""
+    from memcomp_bench.generator import ConversationRecord, ConversationTurn
+
+    profile = {"name": "Marcus", "backstory": "A tester."}
+    record = ConversationRecord(
+        id="20260101_000000",
+        human_profile=profile,
+        ai_model="test/ai",
+        human_model="test/human",
+        seed_words=["ocean", "ember"],
+    )
+    tc = {
+        "id": "wmth00001",
+        "type": "function",
+        "function": {"name": "write_message_to_human", "arguments": json.dumps({"text": "Hello"})},
+    }
+    record.turns = [
+        ConversationTurn(turn_number=1, speaker="human", visible_text="Hi"),
+        ConversationTurn(turn_number=2, speaker="ai", visible_text="Hello", ai_tool_calls=[tc]),
+    ]
+    record.total_tokens_estimate = 10
+    record.started_at = "2026-01-01T00:00:00Z"
+    record.finished_at = "2026-01-01T00:01:00Z"
+    record.ai_messages_raw = [
+        {"role": "system", "content": "prompt"},
+        {"role": "user", "content": "[start]"},
+        {"role": "assistant", "content": None, "tool_calls": [tc]},
+        {"role": "tool", "content": "Hi", "tool_call_id": "wmth00001"},
+    ]
+    return record
+
+
+def _make_resume_client():
+    """Build a FakeChatClient pre-loaded for a cmd_resume run."""
+    from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
+
+    fake = FakeChatClient()
+    for i in range(6):
+        if i % 2 == 0:
+            fake.enqueue(
+                make_tool_call_response(
+                    f"Continued AI {i}", tool_call_id=f"wmth_r{i:03d}", prompt_tokens=700 + i * 50, completion_tokens=30
+                )
+            )
+        else:
+            fake.enqueue(make_plain_response(f"Continued Human {i}", prompt_tokens=700 + i * 50, completion_tokens=25))
+    return fake
+
+
+def _make_resume_args(jsonl_path, **overrides):
+    """Build a Namespace for cmd_resume with sensible defaults."""
+    from argparse import Namespace
+
+    defaults = dict(
+        file=str(jsonl_path),
+        target_tokens=400,
+        language=None,
+        ai_model=None,
+        human_model=None,
+        provider=None,
+        human_provider=None,
+        ai_temperature=None,
+        human_temperature=None,
+        ai_max_tokens=None,
+        human_max_tokens=None,
+        verbose=False,
+    )
+    defaults.update(overrides)
+    return Namespace(**defaults)
 
 
 class TestCmdResumeIntegration:
@@ -288,102 +349,18 @@ class TestCmdResumeIntegration:
         monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", tmp_path / "output_resume")
         monkeypatch.setenv("OPENROUTER_KEY", "test-key-for-resume")
 
-        from memcomp_bench.generator import ConversationRecord, ConversationTurn, save_conversation
-
-        profile = {"name": "Marcus", "backstory": "A tester."}
-        record = ConversationRecord(
-            id="20260101_000000",
-            human_profile=profile,
-            ai_model="test/ai",
-            human_model="test/human",
-            seed_words=["ocean", "ember"],
-        )
-        record.turns = [
-            ConversationTurn(turn_number=1, speaker="human", visible_text="Hi"),
-            ConversationTurn(
-                turn_number=2,
-                speaker="ai",
-                visible_text="Hello",
-                ai_tool_calls=[
-                    {
-                        "id": "wmth00001",
-                        "type": "function",
-                        "function": {"name": "write_message_to_human", "arguments": json.dumps({"text": "Hello"})},
-                    }
-                ],
-            ),
-        ]
-        record.total_tokens_estimate = 10
-        record.started_at = "2026-01-01T00:00:00Z"
-        record.finished_at = "2026-01-01T00:01:00Z"
-        record.ai_messages_raw = [
-            {"role": "system", "content": "prompt"},
-            {"role": "user", "content": "[start]"},
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "wmth00001",
-                        "type": "function",
-                        "function": {"name": "write_message_to_human", "arguments": json.dumps({"text": "Hello"})},
-                    }
-                ],
-            },
-            {"role": "tool", "content": "Hi", "tool_call_id": "wmth00001"},
-        ]
+        from memcomp_bench.generator import save_conversation
 
         output_dir = tmp_path / "output"
         output_dir.mkdir()
         monkeypatch.setattr("memcomp_bench.config.OUTPUT_DIR", output_dir)
-        jsonl_path = save_conversation(record, output_dir)
+        jsonl_path = save_conversation(_make_resume_record(), output_dir)
 
-        from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
-
-        fake = FakeChatClient()
-        for i in range(6):
-            if i % 2 == 0:
-                fake.enqueue(
-                    make_tool_call_response(
-                        f"Continued AI {i}",
-                        tool_call_id=f"wmth_r{i:03d}",
-                        prompt_tokens=700 + i * 50,
-                        completion_tokens=30,
-                    )
-                )
-            else:
-                fake.enqueue(
-                    make_plain_response(
-                        f"Continued Human {i}",
-                        prompt_tokens=700 + i * 50,
-                        completion_tokens=25,
-                    )
-                )
-
-        monkeypatch.setattr(
-            "memcomp_bench.cli.OpenRouterClient",
-            lambda key: fake,
-        )
-
-        from argparse import Namespace
+        fake = _make_resume_client()
+        monkeypatch.setattr("memcomp_bench.cli.OpenRouterClient", lambda key: fake)
 
         from memcomp_bench.cli import cmd_resume
 
-        args = Namespace(
-            file=str(jsonl_path),
-            target_tokens=400,
-            language=None,
-            ai_model=None,
-            human_model=None,
-            provider=None,
-            human_provider=None,
-            ai_temperature=None,
-            human_temperature=None,
-            ai_max_tokens=None,
-            human_max_tokens=None,
-            verbose=False,
-        )
-        cmd_resume(args)
+        cmd_resume(_make_resume_args(jsonl_path))
 
-        # Verify that the fake client was called
         assert len(fake.call_log) > 0

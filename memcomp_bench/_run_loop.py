@@ -140,10 +140,59 @@ def _retry_first_human(gen: Any) -> tuple[str, str | None, list | None]:
     return fallback, None, None
 
 
-def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord:
-    """Core conversation loop — alternates AI/human turns."""
+def _record_ai_turn(gen: Any, ai_response: Any, turn_number: int, ai_cost: float) -> tuple[int, int]:
+    """Record an AI turn and return (ai_tokens, context_tokens)."""
+    gen._add_ai_turn_to_contexts(ai_response)
+
+    ai_tokens = (
+        _estimate_tokens(ai_response.visible_text)
+        + _estimate_tokens(ai_response.assistant_content or "")
+        + _estimate_tokens(ai_response.assistant_reasoning or "")
+    )
+    ai_ctx = (
+        (ai_response.usage.prompt_tokens + ai_response.usage.completion_tokens)
+        if ai_response.usage and ai_response.usage.prompt_tokens
+        else _estimate_context_tokens(gen._ai_messages)
+    )
+
+    ai_turn = ConversationTurn(
+        turn_number=turn_number,
+        speaker="ai",
+        visible_text=ai_response.visible_text,
+        ai_thinking=ai_response.display_thinking,
+        ai_content=ai_response.assistant_content,
+        ai_reasoning=ai_response.assistant_reasoning,
+        ai_tool_calls=copy.deepcopy(ai_response.tool_calls),
+        token_estimate=ai_tokens,
+        cost_usd=ai_cost,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        ai_context_tokens=ai_ctx,
+        human_context_tokens=_estimate_context_tokens(gen._human_messages),
+    )
+    gen._record.turns.append(ai_turn)
+    gen._log_turn(ai_turn)
+    return ai_tokens, ai_ctx
+
+
+def _check_periodic_events(gen: Any, turn_number: int) -> None:
+    """Fire periodic nudges and topic checks."""
     from memcomp_bench.config import TOPIC_CHECK_INTERVAL
 
+    if turn_number % 80 == 0 and turn_number > 0:
+        injected, suppression_reason = gen._queue_human_nudge(
+            turn_number=turn_number,
+            source="b3_refresh",
+            content=_B3_REFRESH_NOTE,
+        )
+        refresh_status = "nudge injected" if injected else f"nudge suppressed ({suppression_reason})"
+        console.print(f"  [dim]Human refresh (turn {turn_number}): {refresh_status}[/dim]")
+
+    if turn_number % TOPIC_CHECK_INTERVAL == 0 and turn_number > 0:
+        gen._check_topic_staleness(turn_number)
+
+
+def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord:
+    """Core conversation loop \u2014 alternates AI/human turns."""
     turn_number = start_turn
     accumulated_tokens = start_tokens
     consecutive_empty = 0
@@ -177,53 +226,12 @@ def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord
             continue
         consecutive_empty = 0
 
-        ai_cost = gen.client.total_cost - cost_before
-        gen._add_ai_turn_to_contexts(ai_response)
-
-        ai_tokens = (
-            _estimate_tokens(ai_response.visible_text)
-            + _estimate_tokens(ai_response.assistant_content or "")
-            + _estimate_tokens(ai_response.assistant_reasoning or "")
-        )
+        ai_tokens, context_tokens = _record_ai_turn(gen, ai_response, turn_number, gen.client.total_cost - cost_before)
         accumulated_tokens += ai_tokens
-        ai_ctx = (
-            (ai_response.usage.prompt_tokens + ai_response.usage.completion_tokens)
-            if ai_response.usage and ai_response.usage.prompt_tokens
-            else _estimate_context_tokens(gen._ai_messages)
-        )
 
-        ai_turn = ConversationTurn(
-            turn_number=turn_number,
-            speaker="ai",
-            visible_text=ai_response.visible_text,
-            ai_thinking=ai_response.display_thinking,
-            ai_content=ai_response.assistant_content,
-            ai_reasoning=ai_response.assistant_reasoning,
-            ai_tool_calls=copy.deepcopy(ai_response.tool_calls),
-            token_estimate=ai_tokens,
-            cost_usd=ai_cost,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            ai_context_tokens=ai_ctx,
-            human_context_tokens=_estimate_context_tokens(gen._human_messages),
-        )
-        gen._record.turns.append(ai_turn)
-        gen._log_turn(ai_turn)
+        _check_periodic_events(gen, turn_number)
 
-        if turn_number % 80 == 0 and turn_number > 0:
-            injected, suppression_reason = gen._queue_human_nudge(
-                turn_number=turn_number,
-                source="b3_refresh",
-                content=_B3_REFRESH_NOTE,
-            )
-            refresh_status = "nudge injected" if injected else f"nudge suppressed ({suppression_reason})"
-            console.print(f"  [dim]Human refresh (turn {turn_number}): {refresh_status}[/dim]")
-
-        if turn_number % TOPIC_CHECK_INTERVAL == 0 and turn_number > 0:
-            gen._check_topic_staleness(turn_number)
-
-        context_tokens = ai_ctx
-        show_progress = gen.verbose or turn_number % 10 == 0
-        if show_progress:
+        if gen.verbose or turn_number % 10 == 0:
             console.print(
                 f"  [dim]\u2014 progress: turn {turn_number} | {context_tokens:,}/{gen.target_tokens:,} tok | ${gen.client.total_cost:.4f}[/dim]"
             )
@@ -240,6 +248,11 @@ def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord
         if should_break:
             break
 
+    return _finalize_record(gen, turn_number, accumulated_tokens)
+
+
+def _finalize_record(gen: Any, turn_number: int, accumulated_tokens: int) -> ConversationRecord:
+    """Seal the record and print the completion summary."""
     gen._record.total_tokens_estimate = accumulated_tokens
     gen._record.total_cost_usd = gen.client.total_cost
     gen._record.finished_at = datetime.now(timezone.utc).isoformat()

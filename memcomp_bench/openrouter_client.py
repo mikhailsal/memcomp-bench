@@ -38,6 +38,9 @@ class OpenRouterClient:
         self.total_prompt_tokens: int = 0
         self.total_completion_tokens: int = 0
 
+    _RETRYABLE_CODES = frozenset({429, 500, 502, 503, 504})
+    _MAX_RETRIES = 5
+
     def chat(
         self,
         *,
@@ -50,6 +53,30 @@ class OpenRouterClient:
         provider: dict[str, Any] | None = None,
         reasoning: dict[str, Any] | None = None,
     ) -> LLMResponse:
+        payload = self._build_payload(model, messages, max_tokens, temperature, tools, tool_choice, provider, reasoning)
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/mikhailsal/memcomp-bench",
+            "X-Title": "memcomp-bench",
+        }
+
+        resp, elapsed = self._send_with_retries(payload, headers)
+
+        data = resp.json()
+        return self._parse_response(data, elapsed)
+
+    def _build_payload(
+        self,
+        model: str,
+        messages: list,
+        max_tokens: int,
+        temperature: float,
+        tools: list | None,
+        tool_choice: str | dict | None,
+        provider: dict | None,
+        reasoning: dict | None,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -64,37 +91,25 @@ class OpenRouterClient:
             payload["provider"] = provider
         if reasoning:
             payload["reasoning"] = reasoning
+        return payload
 
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/mikhailsal/memcomp-bench",
-            "X-Title": "memcomp-bench",
-        }
-
-        max_retries = 5
-        retryable_codes = {429, 500, 502, 503, 504}
+    def _send_with_retries(self, payload: dict, headers: dict) -> tuple[Any, float]:
         last_error = None
-
-        for attempt in range(max_retries):
+        for attempt in range(self._MAX_RETRIES):
             start = time.monotonic()
             try:
-                resp = self._client.post(
-                    f"{OPENROUTER_BASE_URL}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
+                resp = self._client.post(f"{OPENROUTER_BASE_URL}/chat/completions", json=payload, headers=headers)
             except httpx.RequestError as e:
-                if attempt < max_retries - 1:
+                if attempt < self._MAX_RETRIES - 1:
                     wait = min(2**attempt * 3, 30)
                     print(f"[retry] Network error: {e}, retrying in {wait}s...")
                     time.sleep(wait)
                     continue
-                raise RuntimeError(f"Network error after {max_retries} retries: {e}")
+                raise RuntimeError(f"Network error after {self._MAX_RETRIES} retries: {e}")
 
             elapsed = time.monotonic() - start
 
-            if resp.status_code in retryable_codes and attempt < max_retries - 1:
+            if resp.status_code in self._RETRYABLE_CODES and attempt < self._MAX_RETRIES - 1:
                 wait = min(2**attempt * 3, 30)
                 error_body = resp.text[:200]
                 print(f"[retry] API error {resp.status_code}: {error_body}, retrying in {wait}s...")
@@ -103,13 +118,11 @@ class OpenRouterClient:
                 continue
 
             if resp.status_code != 200:
-                error_body = resp.text[:500]
-                raise RuntimeError(f"OpenRouter API error {resp.status_code}: {error_body}")
-            break
-        else:
-            raise RuntimeError(last_error or "Max retries exceeded")
+                raise RuntimeError(f"OpenRouter API error {resp.status_code}: {resp.text[:500]}")
+            return resp, elapsed
+        raise RuntimeError(last_error or "Max retries exceeded")
 
-        data = resp.json()
+    def _parse_response(self, data: dict, elapsed: float) -> LLMResponse:
         choice = data.get("choices", [{}])[0]
         message = choice.get("message", {})
         usage_raw = data.get("usage", {})
@@ -117,10 +130,8 @@ class OpenRouterClient:
         cost_raw = float(usage_raw.get("cost") or 0.0)
         cost_details = usage_raw.get("cost_details") or {}
         if usage_raw.get("is_byok") and cost_details.get("upstream_inference_cost"):
-            # BYOK: `cost` is only the router fee; add the actual inference cost
             cost = cost_raw + float(cost_details["upstream_inference_cost"])
         else:
-            # Non-BYOK or missing details: use `cost`, fall back to `market_cost`
             cost = cost_raw or float(usage_raw.get("market_cost") or 0.0)
 
         usage = Usage(

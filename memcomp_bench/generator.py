@@ -174,22 +174,25 @@ class ConversationGenerator:
         self._last_tool_call_id: str | None = None
         self._current_topic: str | None = None
         self._last_human_nudge_turn: int | None = None
-        self._record = ConversationRecord(
+        self._record = self._make_initial_record()
+
+    def _make_initial_record(self) -> ConversationRecord:
+        return ConversationRecord(
             id=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
-            human_profile=human_profile,
-            ai_model=ai_model,
-            human_model=human_model,
+            human_profile=self.human_profile,
+            ai_model=self.ai_model,
+            human_model=self.human_model,
             seed_words=self._seed_words,
             language=self.language,
             companion_mode=self.companion_mode,
-            ai_provider=ai_provider,
-            ai_reasoning=ai_reasoning,
-            ai_temperature=ai_temperature,
-            ai_max_tokens=ai_max_tokens,
-            human_provider=human_provider,
-            human_reasoning=human_reasoning,
-            human_temperature=human_temperature,
-            human_max_tokens=human_max_tokens,
+            ai_provider=self.ai_provider,
+            ai_reasoning=self.ai_reasoning,
+            ai_temperature=self.ai_temperature,
+            ai_max_tokens=self.ai_max_tokens,
+            human_provider=self.human_provider,
+            human_reasoning=self.human_reasoning,
+            human_temperature=self.human_temperature,
+            human_max_tokens=self.human_max_tokens,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 

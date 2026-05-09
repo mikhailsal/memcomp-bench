@@ -15,16 +15,15 @@ from memcomp_bench.generator import (
     save_conversation,
 )
 
+_TOOL_CALL_TC01 = {
+    "id": "tc_01",
+    "type": "function",
+    "function": {"name": "write_message_to_human", "arguments": json.dumps({"text": "Hello!"})},
+}
 
-def _make_record(
-    *,
-    turns: list[ConversationTurn] | None = None,
-    events: list[ConversationEvent] | None = None,
-    ai_messages_raw: list | None = None,
-) -> ConversationRecord:
-    """Build a minimal but valid ConversationRecord for testing."""
-    profile = {"name": "TestUser", "backstory": "A tester."}
-    default_turns = turns or [
+
+def _default_turns() -> list[ConversationTurn]:
+    return [
         ConversationTurn(
             turn_number=1,
             speaker="human",
@@ -38,43 +37,34 @@ def _make_record(
             speaker="ai",
             visible_text="Hello!",
             ai_thinking='{"thoughts": "greeting"}',
-            ai_tool_calls=[
-                {
-                    "id": "tc_01",
-                    "type": "function",
-                    "function": {
-                        "name": "write_message_to_human",
-                        "arguments": json.dumps({"text": "Hello!"}),
-                    },
-                }
-            ],
+            ai_tool_calls=[_TOOL_CALL_TC01],
             token_estimate=8,
             cost_usd=0.001,
             timestamp="2026-01-01T00:00:01Z",
         ),
     ]
-    default_raw = ai_messages_raw or [
+
+
+def _default_raw_ai_messages() -> list[dict]:
+    return [
         {"role": "system", "content": "System prompt."},
         {"role": "user", "content": "[start]"},
-        {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "tc_01",
-                    "type": "function",
-                    "function": {
-                        "name": "write_message_to_human",
-                        "arguments": json.dumps({"text": "Hello!"}),
-                    },
-                }
-            ],
-        },
+        {"role": "assistant", "content": None, "tool_calls": [_TOOL_CALL_TC01]},
         {"role": "tool", "content": "Hey there", "tool_call_id": "tc_01"},
     ]
+
+
+def _make_record(
+    *,
+    turns: list[ConversationTurn] | None = None,
+    events: list[ConversationEvent] | None = None,
+    ai_messages_raw: list | None = None,
+) -> ConversationRecord:
+    """Build a minimal but valid ConversationRecord for testing."""
+    used_turns = turns or _default_turns()
     record = ConversationRecord(
         id="20260101_000000",
-        human_profile=profile,
+        human_profile={"name": "TestUser", "backstory": "A tester."},
         ai_model="test/model-a",
         human_model="test/model-b",
         seed_words=["ocean", "ember"],
@@ -82,13 +72,13 @@ def _make_record(
         language="english",
         companion_mode="honest",
     )
-    record.turns = default_turns
+    record.turns = used_turns
     record.events = events or []
-    record.total_tokens_estimate = sum(t.token_estimate for t in default_turns)
-    record.total_cost_usd = sum(t.cost_usd for t in default_turns)
+    record.total_tokens_estimate = sum(t.token_estimate for t in used_turns)
+    record.total_cost_usd = sum(t.cost_usd for t in used_turns)
     record.started_at = "2026-01-01T00:00:00Z"
     record.finished_at = "2026-01-01T00:01:00Z"
-    record.ai_messages_raw = default_raw
+    record.ai_messages_raw = ai_messages_raw or _default_raw_ai_messages()
     return record
 
 

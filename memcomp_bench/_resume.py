@@ -57,8 +57,62 @@ def _do_resume(
     from memcomp_bench.generator import _UNSET
 
     jsonl_path = Path(jsonl_path)
-    base = jsonl_path.stem
-    raw_json_path = jsonl_path.parent / f"{base}_raw_ai_context.json"
+    metadata, turns, events = _load_resume_files(jsonl_path)
+
+    cfg = _extract_resume_config(
+        metadata,
+        ai_model_override=ai_model_override,
+        human_model_override=human_model_override,
+        ai_provider_override=ai_provider_override,
+        human_provider_override=human_provider_override,
+        ai_temperature_override=ai_temperature_override,
+        human_temperature_override=human_temperature_override,
+        ai_max_tokens_override=ai_max_tokens_override,
+        human_max_tokens_override=human_max_tokens_override,
+        _UNSET=_UNSET,
+        language_override=language_override,
+    )
+
+    ai_messages = _restore_ai_context(jsonl_path, turns, cfg)
+
+    _print_resume_header(cfg, jsonl_path, turns, target_tokens, _UNSET=_UNSET)
+
+    max_tc, last_tc_id = _scan_tool_call_ids(ai_messages)
+    set_tool_call_counter(max_tc)
+
+    gen = _build_resumed_generator(
+        cls,
+        client,
+        cfg,
+        turns,
+        events,
+        metadata,
+        ai_messages,
+        last_tc_id,
+        target_tokens=target_tokens,
+        verbose=verbose,
+    )
+    _restore_events_and_turns(gen, events, turns)
+
+    return _start_resumed_loop(gen, turns, ai_messages)
+
+
+def _start_resumed_loop(gen: Any, turns: list, ai_messages: list) -> ConversationRecord:
+    """Compute starting position and launch the conversation loop."""
+    last_turn = turns[-1]["turn_number"] if turns else 0
+    last_ai_turn = next((t for t in reversed(turns) if t.get("speaker") == "ai"), None)
+    stored_ctx = last_ai_turn.get("ai_context_tokens", 0) if last_ai_turn else 0
+    existing_tokens = stored_ctx or _estimate_context_tokens(ai_messages)
+
+    console.print(f"  Existing tokens: ~{existing_tokens:,}")
+    console.print()
+
+    return gen._run_loop(start_turn=last_turn, start_tokens=existing_tokens)
+
+
+def _load_resume_files(jsonl_path: Path) -> tuple[dict, list, list]:
+    """Load and validate the JSONL + raw context files for resume."""
+    raw_json_path = jsonl_path.parent / f"{jsonl_path.stem}_raw_ai_context.json"
 
     if not jsonl_path.exists():
         raise FileNotFoundError(f"JSONL not found: {jsonl_path}")
@@ -71,22 +125,27 @@ def _do_resume(
     metadata = lines[0]
     turns = [l for l in lines[1:] if l.get("type") == "turn"]
     events = [l for l in lines[1:] if l.get("type") == "event"]
+    return metadata, turns, events
 
-    profile = metadata["human_profile"]
-    ai_model = ai_model_override or metadata["ai_model"]
-    human_model = human_model_override or metadata["human_model"]
-    seed_words = metadata.get("seed_words", [])
-    conversation_plan = metadata.get("conversation_plan", "")
-    language = language_override or metadata.get("language", "english")
-    companion_mode = metadata.get("companion_mode", "supportive")
 
+def _extract_resume_config(
+    metadata: dict,
+    *,
+    ai_model_override: str | None,
+    human_model_override: str | None,
+    ai_provider_override: object,
+    human_provider_override: object,
+    ai_temperature_override: float | None,
+    human_temperature_override: float | None,
+    ai_max_tokens_override: int | None,
+    human_max_tokens_override: int | None,
+    _UNSET: object,
+    language_override: str | None,
+) -> dict:
+    """Extract and merge saved metadata with CLI overrides into a flat config dict."""
     saved_ai_provider = metadata.get("ai_provider", AI_PROVIDER)
-    ai_provider = ai_provider_override if ai_provider_override is not _UNSET else saved_ai_provider
     saved_human_provider = metadata.get("human_provider", HUMAN_PROVIDER)
-    human_provider = human_provider_override if human_provider_override is not _UNSET else saved_human_provider
 
-    ai_reasoning = metadata.get("ai_reasoning", AI_REASONING)
-    human_reasoning = metadata.get("human_reasoning", HUMAN_REASONING)
     ai_temperature = metadata.get("ai_temperature", AI_TEMPERATURE)
     if ai_temperature_override is not None:
         ai_temperature = ai_temperature_override
@@ -99,61 +158,66 @@ def _do_resume(
     human_max_tokens = metadata.get("human_max_tokens", HUMAN_MAX_TOKENS)
     if human_max_tokens_override is not None:
         human_max_tokens = human_max_tokens_override
-    previous_cost = metadata.get("total_cost_usd", 0.0)
 
+    return {
+        "profile": metadata["human_profile"],
+        "ai_model": ai_model_override or metadata["ai_model"],
+        "human_model": human_model_override or metadata["human_model"],
+        "seed_words": metadata.get("seed_words", []),
+        "conversation_plan": metadata.get("conversation_plan", ""),
+        "language": language_override or metadata.get("language", "english"),
+        "companion_mode": metadata.get("companion_mode", "supportive"),
+        "ai_provider": ai_provider_override if ai_provider_override is not _UNSET else saved_ai_provider,
+        "human_provider": human_provider_override if human_provider_override is not _UNSET else saved_human_provider,
+        "ai_reasoning": metadata.get("ai_reasoning", AI_REASONING),
+        "human_reasoning": metadata.get("human_reasoning", HUMAN_REASONING),
+        "ai_temperature": ai_temperature,
+        "human_temperature": human_temperature,
+        "ai_max_tokens": ai_max_tokens,
+        "human_max_tokens": human_max_tokens,
+        "previous_cost": metadata.get("total_cost_usd", 0.0),
+        "ai_model_override": ai_model_override,
+        "human_model_override": human_model_override,
+        "ai_provider_override": ai_provider_override,
+        "human_provider_override": human_provider_override,
+        "ai_temperature_override": ai_temperature_override,
+        "human_temperature_override": human_temperature_override,
+        "ai_max_tokens_override": ai_max_tokens_override,
+        "human_max_tokens_override": human_max_tokens_override,
+    }
+
+
+def _restore_ai_context(jsonl_path: Path, turns: list, cfg: dict) -> list[dict[str, Any]]:
+    """Load raw AI context from disk, rebuilding/normalizing as needed."""
+    raw_json_path = jsonl_path.parent / f"{jsonl_path.stem}_raw_ai_context.json"
     with open(raw_json_path, "r", encoding="utf-8") as f:
         ai_messages = json.load(f)
 
     if not _is_restorable_ai_context(ai_messages):
         ai_messages = _rebuild_ai_context_from_turns(
-            build_ai_system_prompt(seed_words, companion_mode=companion_mode),
+            build_ai_system_prompt(cfg["seed_words"], companion_mode=cfg["companion_mode"]),
             turns,
-            use_reasoning_field=_uses_native_reasoning_field(ai_reasoning),
+            use_reasoning_field=_uses_native_reasoning_field(cfg["ai_reasoning"]),
         )
         console.print("  [dim yellow]Raw AI context missing or incomplete; rebuilt from saved turns.[/dim yellow]")
 
-    migrated_reasoning = _migrate_assistant_reasoning_fields(
+    migrated = _migrate_assistant_reasoning_fields(
         ai_messages,
-        use_reasoning_field=_uses_native_reasoning_field(ai_reasoning),
+        use_reasoning_field=_uses_native_reasoning_field(cfg["ai_reasoning"]),
     )
-    if migrated_reasoning > 0:
-        console.print(f"  [dim]Migrated {migrated_reasoning} assistant messages from content to reasoning.[/dim]")
+    if migrated > 0:
+        console.print(f"  [dim]Migrated {migrated} assistant messages from content to reasoning.[/dim]")
 
     chars_saved = _normalize_tool_arguments(ai_messages)
     if chars_saved > 0:
         console.print(
             f"  [dim]Normalized Unicode escapes in context (saved ~{chars_saved:,} chars / ~{chars_saved // 4:,} tokens)[/dim]"
         )
+    return ai_messages
 
-    _print_resume_header(
-        profile,
-        jsonl_path,
-        turns,
-        ai_model,
-        human_model,
-        ai_provider,
-        human_provider,
-        ai_reasoning,
-        human_reasoning,
-        ai_temperature,
-        human_temperature,
-        ai_max_tokens,
-        human_max_tokens,
-        previous_cost,
-        target_tokens,
-        seed_words,
-        language,
-        ai_model_override=ai_model_override,
-        human_model_override=human_model_override,
-        ai_provider_override=ai_provider_override,
-        human_provider_override=human_provider_override,
-        ai_temperature_override=ai_temperature_override,
-        human_temperature_override=human_temperature_override,
-        ai_max_tokens_override=ai_max_tokens_override,
-        human_max_tokens_override=human_max_tokens_override,
-        _UNSET=_UNSET,
-    )
 
+def _scan_tool_call_ids(ai_messages: list[dict[str, Any]]) -> tuple[int, str | None]:
+    """Scan AI context for the highest tool call counter and last tool call id."""
     max_tc = 0
     last_tc_id = None
     for msg in ai_messages:
@@ -168,32 +232,48 @@ def _do_resume(
                         pass
         if msg.get("tool_call_id"):
             last_tc_id = msg["tool_call_id"]
-    set_tool_call_counter(max_tc)
+    return max_tc, last_tc_id
 
+
+def _build_resumed_generator(
+    cls: type,
+    client: OpenRouterClient,
+    cfg: dict,
+    turns: list,
+    events: list,
+    metadata: dict,
+    ai_messages: list[dict[str, Any]],
+    last_tc_id: str | None,
+    *,
+    target_tokens: int,
+    verbose: bool,
+) -> Any:
+    """Instantiate a ConversationGenerator and restore its internal state."""
     gen = cls(
         client,
-        profile,
-        ai_model=ai_model,
-        human_model=human_model,
+        cfg["profile"],
+        ai_model=cfg["ai_model"],
+        human_model=cfg["human_model"],
         target_tokens=target_tokens,
-        language=language,
-        companion_mode=companion_mode,
+        language=cfg["language"],
+        companion_mode=cfg["companion_mode"],
         verbose=verbose,
-        ai_provider=ai_provider,
-        ai_reasoning=ai_reasoning,
-        ai_temperature=ai_temperature,
-        ai_max_tokens=ai_max_tokens,
-        human_provider=human_provider,
-        human_reasoning=human_reasoning,
-        human_temperature=human_temperature,
-        human_max_tokens=human_max_tokens,
+        ai_provider=cfg["ai_provider"],
+        ai_reasoning=cfg["ai_reasoning"],
+        ai_temperature=cfg["ai_temperature"],
+        ai_max_tokens=cfg["ai_max_tokens"],
+        human_provider=cfg["human_provider"],
+        human_reasoning=cfg["human_reasoning"],
+        human_temperature=cfg["human_temperature"],
+        human_max_tokens=cfg["human_max_tokens"],
     )
 
-    client.total_cost = previous_cost
-    gen._seed_words = seed_words
-    gen._conversation_plan = conversation_plan
+    client.total_cost = cfg["previous_cost"]
+    gen._seed_words = cfg["seed_words"]
+    gen._conversation_plan = cfg["conversation_plan"]
     gen._ai_messages = ai_messages
     gen._last_tool_call_id = last_tc_id
+
     topic_events = [e for e in events if e.get("event_type") == "topic_judge"]
     if topic_events:
         gen._current_topic = topic_events[-1].get("current_topic")
@@ -205,90 +285,61 @@ def _do_resume(
     _rebuild_human_context(gen, turns, events)
 
     gen._record.id = metadata["conversation_id"]
-    gen._record.seed_words = seed_words
-    gen._record.conversation_plan = conversation_plan
-    gen._record.language = language
-    gen._record.companion_mode = companion_mode
+    gen._record.seed_words = cfg["seed_words"]
+    gen._record.conversation_plan = cfg["conversation_plan"]
+    gen._record.language = cfg["language"]
+    gen._record.companion_mode = cfg["companion_mode"]
     gen._record.started_at = metadata["started_at"]
-    _restore_events_and_turns(gen, events, turns)
-
-    last_turn = turns[-1]["turn_number"] if turns else 0
-    last_ai_turn = next((t for t in reversed(turns) if t.get("speaker") == "ai"), None)
-    stored_ctx = last_ai_turn.get("ai_context_tokens", 0) if last_ai_turn else 0
-    existing_tokens = stored_ctx or _estimate_context_tokens(ai_messages)
-
-    console.print(f"  Existing tokens: ~{existing_tokens:,}")
-    console.print()
-
-    return gen._run_loop(start_turn=last_turn, start_tokens=existing_tokens)
+    return gen
 
 
 def _print_resume_header(
-    profile: dict,
+    cfg: dict,
     jsonl_path: Path,
     turns: list,
-    ai_model: str,
-    human_model: str,
-    ai_provider: Any,
-    human_provider: Any,
-    ai_reasoning: Any,
-    human_reasoning: Any,
-    ai_temperature: float,
-    human_temperature: float,
-    ai_max_tokens: int,
-    human_max_tokens: int,
-    previous_cost: float,
     target_tokens: int,
-    seed_words: list,
-    language: str,
-    **kwargs: Any,
+    *,
+    _UNSET: object,
 ) -> None:
     """Print the resume status header to console."""
-    ai_model_override = kwargs.get("ai_model_override")
-    human_model_override = kwargs.get("human_model_override")
-    ai_provider_override = kwargs.get("ai_provider_override")
-    human_provider_override = kwargs.get("human_provider_override")
-    ai_temperature_override = kwargs.get("ai_temperature_override")
-    human_temperature_override = kwargs.get("human_temperature_override")
-    ai_max_tokens_override = kwargs.get("ai_max_tokens_override")
-    human_max_tokens_override = kwargs.get("human_max_tokens_override")
-    _UNSET = kwargs.get("_UNSET")
+    _ov = " [yellow](overridden)[/yellow]"
 
-    console.print(f"\n[bold]Resuming conversation with {profile['name']}[/bold]")
+    console.print(f"\n[bold]Resuming conversation with {cfg['profile']['name']}[/bold]")
     console.print(f"  From: {jsonl_path.name}")
     console.print(f"  Existing turns: {len(turns)}")
-    console.print(f"  AI model: {ai_model}" + (" [yellow](overridden)[/yellow]" if ai_model_override else ""))
-    console.print(f"  Human model: {human_model}" + (" [yellow](overridden)[/yellow]" if human_model_override else ""))
-    if ai_provider:
-        overridden = ai_provider_override is not _UNSET
-        console.print(f"  AI provider: {ai_provider}" + (" [yellow](overridden)[/yellow]" if overridden else ""))
-    if ai_reasoning:
-        console.print(f"  AI reasoning: {ai_reasoning}")
-    if human_provider:
-        overridden_hp = human_provider_override is not _UNSET
+    console.print(f"  AI model: {cfg['ai_model']}" + (_ov if cfg.get("ai_model_override") else ""))
+    console.print(f"  Human model: {cfg['human_model']}" + (_ov if cfg.get("human_model_override") else ""))
+    if cfg["ai_provider"]:
         console.print(
-            f"  Human provider: {human_provider}" + (" [yellow](overridden)[/yellow]" if overridden_hp else "")
+            f"  AI provider: {cfg['ai_provider']}" + (_ov if cfg.get("ai_provider_override") is not _UNSET else "")
         )
-    if human_reasoning:
-        console.print(f"  Human reasoning: {human_reasoning}")
-    temp_line = f"  AI temperature: {ai_temperature}" + (
-        " [yellow](overridden)[/yellow]" if ai_temperature_override is not None else ""
+    if cfg["ai_reasoning"]:
+        console.print(f"  AI reasoning: {cfg['ai_reasoning']}")
+    if cfg["human_provider"]:
+        console.print(
+            f"  Human provider: {cfg['human_provider']}"
+            + (_ov if cfg.get("human_provider_override") is not _UNSET else "")
+        )
+    if cfg["human_reasoning"]:
+        console.print(f"  Human reasoning: {cfg['human_reasoning']}")
+    temp_line = f"  AI temperature: {cfg['ai_temperature']}" + (
+        _ov if cfg.get("ai_temperature_override") is not None else ""
     )
-    temp_line += f" / Human temperature: {human_temperature}" + (
-        " [yellow](overridden)[/yellow]" if human_temperature_override is not None else ""
+    temp_line += f" / Human temperature: {cfg['human_temperature']}" + (
+        _ov if cfg.get("human_temperature_override") is not None else ""
     )
     console.print(temp_line)
-    tokens_line = f"  AI max tokens: {ai_max_tokens}" + (
-        " [yellow](overridden)[/yellow]" if ai_max_tokens_override is not None else ""
+    tok_line = f"  AI max tokens: {cfg['ai_max_tokens']}" + (
+        _ov if cfg.get("ai_max_tokens_override") is not None else ""
     )
-    tokens_line += f" / Human max tokens: {human_max_tokens}" + (
-        " [yellow](overridden)[/yellow]" if human_max_tokens_override is not None else ""
+    tok_line += f" / Human max tokens: {cfg['human_max_tokens']}" + (
+        _ov if cfg.get("human_max_tokens_override") is not None else ""
     )
-    console.print(tokens_line)
-    console.print(f"  Previous cost: ${previous_cost:.4f}")
+    console.print(tok_line)
+    console.print(f"  Previous cost: ${cfg['previous_cost']:.4f}")
     console.print(f"  New target: ~{target_tokens:,} tokens")
-    console.print(f"  Seed: {', '.join(seed_words)}")
-    console.print(f"  Language: {language}")
+    console.print(f"  Seed: {', '.join(cfg['seed_words'])}")
+    console.print(f"  Language: {cfg['language']}")
 
 
 def _rebuild_human_context(gen: Any, turns: list, events: list) -> None:

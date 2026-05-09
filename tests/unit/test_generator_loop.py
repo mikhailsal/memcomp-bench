@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,108 +19,50 @@ from memcomp_bench.openrouter_client import LLMResponse, Usage
 from memcomp_bench.prompts import HUMAN_PROFILES
 from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
 
+_SCRIPTED_SEQUENCE = [
+    ("plan", "Plan: Talk about music and food. Keep it casual.", 100, 50),
+    ("ai", "Hey there! Nice to meet you.", 200, 20),
+    ("human", "Hi! I'm Marcus. What's your name?", 300, 30),
+    ("ai", "I don't have a name yet. What do you think would suit me?", 400, 40),
+    ("human", "How about Pixel? You seem kind of digital and creative.", 500, 25),
+    ("ai", "Pixel... I actually kind of like that. It feels right.", 600, 35),
+    ("human", "Cool! So Pixel, what kind of music do you think you'd be into?", 700, 30),
+    ("ai", "I'm drawn to electronic music. Something about the patterns.", 800, 40),
+]
+
 
 def _scripted_client_for_generate(*, include_empty_retry: bool = False) -> FakeChatClient:
-    """Build a FakeChatClient pre-loaded with responses for a full generate() run.
-
-    Sequence expected by generate():
-      1. plan generation  (plain response)
-      2. AI greeting      (tool call — _get_ai_response)
-      3. human turn 1     (plain response — _get_human_response)
-      4. AI turn 2        (tool call)
-      5. human turn 3     (plain response)
-      6. AI turn 4        (tool call)
-      [target_tokens reached -> loop exits]
-    """
+    """Build a FakeChatClient pre-loaded with responses for a full generate() run."""
     client = FakeChatClient()
+    tc_counter = 0
 
-    # 1. Conversation plan
-    client.enqueue(
-        make_plain_response(
-            "Plan: Talk about music and food. Keep it casual.",
-            prompt_tokens=100,
-            completion_tokens=50,
-        )
-    )
-
-    # 2. AI greeting (tool call)
-    client.enqueue(
-        make_tool_call_response(
-            "Hey there! Nice to meet you.",
-            tool_call_id="wmth00001",
-            prompt_tokens=200,
-            completion_tokens=20,
-        )
-    )
-
-    # 3. Human turn 1
-    client.enqueue(
-        make_plain_response(
-            "Hi! I'm Marcus. What's your name?",
-            prompt_tokens=300,
-            completion_tokens=30,
-        )
-    )
-
-    if include_empty_retry:
-        client.enqueue(
-            LLMResponse(
-                content="plain text without tool call",
-                tool_calls=None,
-                usage=Usage(prompt_tokens=10, completion_tokens=10),
-                finish_reason="stop",
-                raw={},
+    for role, text, prompt_tok, comp_tok in _SCRIPTED_SEQUENCE:
+        if role in ("plan", "human"):
+            client.enqueue(make_plain_response(text, prompt_tokens=prompt_tok, completion_tokens=comp_tok))
+        else:
+            tc_counter += 1
+            kwargs: dict[str, Any] = {}
+            if tc_counter == 2:
+                kwargs["reasoning"] = "Thinking about identity"
+            client.enqueue(
+                make_tool_call_response(
+                    text,
+                    tool_call_id=f"wmth{tc_counter:05d}",
+                    prompt_tokens=prompt_tok,
+                    completion_tokens=comp_tok,
+                    **kwargs,
+                )
             )
-        )
-
-    # 4. AI turn 2
-    client.enqueue(
-        make_tool_call_response(
-            "I don't have a name yet. What do you think would suit me?",
-            tool_call_id="wmth00002",
-            reasoning="Thinking about identity",
-            prompt_tokens=400,
-            completion_tokens=40,
-        )
-    )
-
-    # 5. Human turn 3
-    client.enqueue(
-        make_plain_response(
-            "How about Pixel? You seem kind of digital and creative.",
-            prompt_tokens=500,
-            completion_tokens=25,
-        )
-    )
-
-    # 6. AI turn 4
-    client.enqueue(
-        make_tool_call_response(
-            "Pixel... I actually kind of like that. It feels right.",
-            tool_call_id="wmth00003",
-            prompt_tokens=600,
-            completion_tokens=35,
-        )
-    )
-
-    # 7. Human turn 5 (if loop continues)
-    client.enqueue(
-        make_plain_response(
-            "Cool! So Pixel, what kind of music do you think you'd be into?",
-            prompt_tokens=700,
-            completion_tokens=30,
-        )
-    )
-
-    # 8. Extra AI response (safety buffer)
-    client.enqueue(
-        make_tool_call_response(
-            "I'm drawn to electronic music. Something about the patterns.",
-            tool_call_id="wmth00004",
-            prompt_tokens=800,
-            completion_tokens=40,
-        )
-    )
+        if include_empty_retry and role == "human" and tc_counter == 0:
+            client.enqueue(
+                LLMResponse(
+                    content="plain text without tool call",
+                    tool_calls=None,
+                    usage=Usage(prompt_tokens=10, completion_tokens=10),
+                    finish_reason="stop",
+                    raw={},
+                )
+            )
 
     return client
 

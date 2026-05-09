@@ -4,7 +4,7 @@
 #
 # All tunables are grouped here for easy adjustment:
 #   - Coverage threshold  → coverage-gate args (--cov-fail-under)
-#   - Max file length     → max-file-length args (--max-lines)
+#   - Max file length     → max-file-length entry (MAX=500)
 #   - Max file size       → check-added-large-files args (--maxkb)
 #
 # Run `make hooks-run` to execute all hooks against the full repo.
@@ -50,14 +50,6 @@ repos:
   # ===========================================================================
   - repo: local
     hooks:
-      # ---- Max file length ---------------------------------------------------
-      - id: max-file-length
-        name: "check max file length (2000 lines)"
-        language: system
-        entry: bash -c 'MAX=2000; status=0; for f in "$@"; do n=$(wc -l < "$f"); if [ "$n" -gt "$MAX" ]; then echo "FAIL  $f ($n lines > $MAX)"; status=1; fi; done; exit $status'
-        args: ["--"]
-        types: [python]
-
       # ---- Unit tests --------------------------------------------------------
       - id: tests-unit
         name: "run unit tests"
@@ -75,3 +67,11 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
+
+      # ---- Max file length (runs last, after formatters have modified files) -
+      - id: max-file-length
+        name: "check max file length (500 lines)"
+        language: system
+        entry: bash -c 'MAX=500; status=0; for f in "$@"; do n=$(wc -l < "$f"); if [ "$n" -gt "$MAX" ]; then echo "FAIL  $f ($n lines > $MAX)"; status=1; fi; done; exit $status'
+        args: ["--"]
+        types: [python]

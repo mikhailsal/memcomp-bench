@@ -13,10 +13,10 @@ import pytest
 
 from src.openrouter_client import LLMResponse, OpenRouterClient, Usage
 
-
 # ---------------------------------------------------------------------------
 # FakeChatClient — scripted OpenRouterClient for offline tests
 # ---------------------------------------------------------------------------
+
 
 class FakeChatClient(OpenRouterClient):
     """Drop-in replacement that returns pre-queued LLMResponse objects."""
@@ -51,6 +51,7 @@ class FakeChatClient(OpenRouterClient):
 # Convenience builders
 # ---------------------------------------------------------------------------
 
+
 def make_tool_call_response(
     text: str,
     tool_call_id: str = "tc_001",
@@ -67,14 +68,16 @@ def make_tool_call_response(
         args["reasoning"] = reasoning
     return LLMResponse(
         content=None,
-        tool_calls=[{
-            "id": tool_call_id,
-            "type": "function",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": json.dumps(args, ensure_ascii=False),
-            },
-        }],
+        tool_calls=[
+            {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps(args, ensure_ascii=False),
+                },
+            }
+        ],
         reasoning=None,
         usage=Usage(
             prompt_tokens=prompt_tokens,
@@ -112,6 +115,7 @@ def make_plain_response(
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def fake_client() -> FakeChatClient:

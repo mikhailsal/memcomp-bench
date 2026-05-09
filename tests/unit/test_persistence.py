@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 from src.generator import (
+    ConversationEvent,
     ConversationRecord,
     ConversationTurn,
-    ConversationEvent,
     _write_conversation_markdown,
     load_conversation_record,
     reformat_markdown,
@@ -26,34 +26,49 @@ def _make_record(
     profile = {"name": "TestUser", "backstory": "A tester."}
     default_turns = turns or [
         ConversationTurn(
-            turn_number=1, speaker="human", visible_text="Hey there",
-            token_estimate=5, cost_usd=0.0, timestamp="2026-01-01T00:00:00Z",
+            turn_number=1,
+            speaker="human",
+            visible_text="Hey there",
+            token_estimate=5,
+            cost_usd=0.0,
+            timestamp="2026-01-01T00:00:00Z",
         ),
         ConversationTurn(
-            turn_number=2, speaker="ai", visible_text="Hello!",
+            turn_number=2,
+            speaker="ai",
+            visible_text="Hello!",
             ai_thinking='{"thoughts": "greeting"}',
-            ai_tool_calls=[{
-                "id": "tc_01", "type": "function",
-                "function": {
-                    "name": "write_message_to_human",
-                    "arguments": json.dumps({"text": "Hello!"}),
-                },
-            }],
-            token_estimate=8, cost_usd=0.001, timestamp="2026-01-01T00:00:01Z",
+            ai_tool_calls=[
+                {
+                    "id": "tc_01",
+                    "type": "function",
+                    "function": {
+                        "name": "write_message_to_human",
+                        "arguments": json.dumps({"text": "Hello!"}),
+                    },
+                }
+            ],
+            token_estimate=8,
+            cost_usd=0.001,
+            timestamp="2026-01-01T00:00:01Z",
         ),
     ]
     default_raw = ai_messages_raw or [
         {"role": "system", "content": "System prompt."},
         {"role": "user", "content": "[start]"},
         {
-            "role": "assistant", "content": None,
-            "tool_calls": [{
-                "id": "tc_01", "type": "function",
-                "function": {
-                    "name": "write_message_to_human",
-                    "arguments": json.dumps({"text": "Hello!"}),
-                },
-            }],
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "tc_01",
+                    "type": "function",
+                    "function": {
+                        "name": "write_message_to_human",
+                        "arguments": json.dumps({"text": "Hello!"}),
+                    },
+                }
+            ],
         },
         {"role": "tool", "content": "Hey there", "tool_call_id": "tc_01"},
     ]
@@ -80,6 +95,7 @@ def _make_record(
 # ---------------------------------------------------------------------------
 # save_conversation
 # ---------------------------------------------------------------------------
+
 
 class TestSaveConversation:
     def test_creates_three_files(self, tmp_output_dir: Path):
@@ -109,8 +125,12 @@ class TestSaveConversation:
 
     def test_events_persisted(self, tmp_output_dir: Path):
         event = ConversationEvent(
-            event_type="topic_judge", turn_number=2, source="topic_judge",
-            current_topic="greetings", topic_changed=False, nudge_injected=True,
+            event_type="topic_judge",
+            turn_number=2,
+            source="topic_judge",
+            current_topic="greetings",
+            topic_changed=False,
+            nudge_injected=True,
         )
         record = _make_record(events=[event])
         jsonl_path = save_conversation(record, tmp_output_dir)
@@ -134,6 +154,7 @@ class TestSaveConversation:
 # load_conversation_record
 # ---------------------------------------------------------------------------
 
+
 class TestLoadConversationRecord:
     def test_roundtrip(self, tmp_output_dir: Path):
         original = _make_record()
@@ -155,8 +176,11 @@ class TestLoadConversationRecord:
 
     def test_events_loaded(self, tmp_output_dir: Path):
         event = ConversationEvent(
-            event_type="human_nudge", turn_number=4, source="b3_refresh",
-            nudge_injected=True, message="Time to switch topics.",
+            event_type="human_nudge",
+            turn_number=4,
+            source="b3_refresh",
+            nudge_injected=True,
+            message="Time to switch topics.",
         )
         record = _make_record(events=[event])
         jsonl_path = save_conversation(record, tmp_output_dir)
@@ -168,6 +192,7 @@ class TestLoadConversationRecord:
 # ---------------------------------------------------------------------------
 # reformat_markdown
 # ---------------------------------------------------------------------------
+
 
 class TestReformatMarkdown:
     def test_regenerates_md_only(self, tmp_output_dir: Path):
@@ -186,9 +211,11 @@ class TestReformatMarkdown:
 # _write_conversation_markdown — branch coverage
 # ---------------------------------------------------------------------------
 
+
 class TestWriteConversationMarkdown:
     def _render(self, record: ConversationRecord) -> str:
         from io import StringIO
+
         f = StringIO()
         _write_conversation_markdown(f, record)
         return f.getvalue()
@@ -202,10 +229,14 @@ class TestWriteConversationMarkdown:
     def test_ai_thinking_rendered(self):
         turns = [
             ConversationTurn(
-                turn_number=1, speaker="human", visible_text="Hi",
+                turn_number=1,
+                speaker="human",
+                visible_text="Hi",
             ),
             ConversationTurn(
-                turn_number=2, speaker="ai", visible_text="Hello!",
+                turn_number=2,
+                speaker="ai",
+                visible_text="Hello!",
                 ai_thinking='{"thoughts": "greeting"}',
             ),
         ]
@@ -216,7 +247,9 @@ class TestWriteConversationMarkdown:
     def test_native_reasoning_rendered(self):
         turns = [
             ConversationTurn(
-                turn_number=1, speaker="ai", visible_text="Hi",
+                turn_number=1,
+                speaker="ai",
+                visible_text="Hi",
                 ai_reasoning="Native reasoning text",
             ),
         ]
@@ -228,13 +261,17 @@ class TestWriteConversationMarkdown:
         args = json.dumps({"text": "Hi", "reasoning": "after"})
         turns = [
             ConversationTurn(
-                turn_number=1, speaker="ai", visible_text="Hi",
-                ai_tool_calls=[{
-                    "function": {
-                        "name": "write_message_to_human",
-                        "arguments": args,
-                    },
-                }],
+                turn_number=1,
+                speaker="ai",
+                visible_text="Hi",
+                ai_tool_calls=[
+                    {
+                        "function": {
+                            "name": "write_message_to_human",
+                            "arguments": args,
+                        },
+                    }
+                ],
             ),
         ]
         record = _make_record(turns=turns)
@@ -243,8 +280,11 @@ class TestWriteConversationMarkdown:
 
     def test_events_section(self):
         event = ConversationEvent(
-            event_type="topic_judge", turn_number=2, source="topic_judge",
-            current_topic="music", topic_changed=True,
+            event_type="topic_judge",
+            turn_number=2,
+            source="topic_judge",
+            current_topic="music",
+            topic_changed=True,
         )
         record = _make_record(events=[event])
         md = self._render(record)
@@ -261,7 +301,9 @@ class TestWriteConversationMarkdown:
     def test_human_reasoning_rendered(self):
         turns = [
             ConversationTurn(
-                turn_number=1, speaker="human", visible_text="Hey",
+                turn_number=1,
+                speaker="human",
+                visible_text="Hey",
                 human_reasoning="thinking about what to say",
             ),
         ]
@@ -272,8 +314,11 @@ class TestWriteConversationMarkdown:
     def test_context_tokens_displayed(self):
         turns = [
             ConversationTurn(
-                turn_number=1, speaker="human", visible_text="Hey",
-                ai_context_tokens=100, human_context_tokens=80,
+                turn_number=1,
+                speaker="human",
+                visible_text="Hey",
+                ai_context_tokens=100,
+                human_context_tokens=80,
             ),
         ]
         record = _make_record(turns=turns)
@@ -294,8 +339,11 @@ class TestWriteConversationMarkdown:
 
     def test_event_with_message_note(self):
         event = ConversationEvent(
-            event_type="human_nudge", turn_number=3, source="b3_refresh",
-            nudge_injected=True, message="Life event happened.",
+            event_type="human_nudge",
+            turn_number=3,
+            source="b3_refresh",
+            nudge_injected=True,
+            message="Life event happened.",
         )
         record = _make_record(events=[event])
         md = self._render(record)
@@ -303,8 +351,11 @@ class TestWriteConversationMarkdown:
 
     def test_event_with_suppression_reason(self):
         event = ConversationEvent(
-            event_type="human_nudge", turn_number=4, source="topic_judge",
-            nudge_injected=False, suppression_reason="already_nudged_this_turn",
+            event_type="human_nudge",
+            turn_number=4,
+            source="topic_judge",
+            nudge_injected=False,
+            suppression_reason="already_nudged_this_turn",
         )
         record = _make_record(events=[event])
         md = self._render(record)

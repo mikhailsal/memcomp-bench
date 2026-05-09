@@ -68,10 +68,7 @@ class TestProxyE2E:
         assert record.turns[0].speaker == "human"
 
         # At least one AI turn should have tool_calls
-        ai_turns_with_tools = [
-            t for t in record.turns
-            if t.speaker == "ai" and t.ai_tool_calls
-        ]
+        ai_turns_with_tools = [t for t in record.turns if t.speaker == "ai" and t.ai_tool_calls]
         # openrouter/free may route to a model that doesn't use tool_choice;
         # we just verify the conversation happened
         assert len(record.turns) >= 2
@@ -90,9 +87,7 @@ class TestProxyE2E:
         assert loaded.ai_model == LIVE_MODEL
 
         # Free model — cost should be zero or negligible
-        assert record.total_cost_usd <= 0.01, (
-            f"Expected near-zero cost for free model, got ${record.total_cost_usd}"
-        )
+        assert record.total_cost_usd <= 0.01, f"Expected near-zero cost for free model, got ${record.total_cost_usd}"
 
         # --- Resume from the saved JSONL ---
         resume_client = OpenRouterClient(load_api_key())

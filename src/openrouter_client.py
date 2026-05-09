@@ -86,7 +86,7 @@ class OpenRouterClient:
                 )
             except httpx.RequestError as e:
                 if attempt < max_retries - 1:
-                    wait = min(2 ** attempt * 3, 30)
+                    wait = min(2**attempt * 3, 30)
                     print(f"[retry] Network error: {e}, retrying in {wait}s...")
                     time.sleep(wait)
                     continue
@@ -95,7 +95,7 @@ class OpenRouterClient:
             elapsed = time.monotonic() - start
 
             if resp.status_code in retryable_codes and attempt < max_retries - 1:
-                wait = min(2 ** attempt * 3, 30)
+                wait = min(2**attempt * 3, 30)
                 error_body = resp.text[:200]
                 print(f"[retry] API error {resp.status_code}: {error_body}, retrying in {wait}s...")
                 time.sleep(wait)
@@ -104,9 +104,7 @@ class OpenRouterClient:
 
             if resp.status_code != 200:
                 error_body = resp.text[:500]
-                raise RuntimeError(
-                    f"OpenRouter API error {resp.status_code}: {error_body}"
-                )
+                raise RuntimeError(f"OpenRouter API error {resp.status_code}: {error_body}")
             break
         else:
             raise RuntimeError(last_error or "Max retries exceeded")

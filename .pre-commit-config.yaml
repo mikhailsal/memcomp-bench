@@ -1,0 +1,77 @@
+# =============================================================================
+# Pre-commit hook configuration for memcomp-bench
+# Docs: https://pre-commit.com
+#
+# All tunables are grouped here for easy adjustment:
+#   - Coverage threshold  → coverage-gate args (--cov-fail-under)
+#   - Max file length     → max-file-length args (--max-lines)
+#   - Max file size       → check-added-large-files args (--maxkb)
+#
+# Run `make hooks-run` to execute all hooks against the full repo.
+# =============================================================================
+
+default_language_version:
+  python: python3
+
+exclude: "^output/"
+
+repos:
+  # ===========================================================================
+  # 1. Built-in sanity checks
+  # ===========================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^\.vscode/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: debug-statements
+      - id: check-ast
+      - id: check-symlinks
+
+  # ===========================================================================
+  # 2. Ruff — fast linter + formatter (reads config from pyproject.toml)
+  # ===========================================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+
+  # ===========================================================================
+  # 3. Local project-specific hooks
+  # ===========================================================================
+  - repo: local
+    hooks:
+      # ---- Max file length ---------------------------------------------------
+      - id: max-file-length
+        name: "check max file length (2000 lines)"
+        language: system
+        entry: bash -c 'MAX=2000; status=0; for f in "$@"; do n=$(wc -l < "$f"); if [ "$n" -gt "$MAX" ]; then echo "FAIL  $f ($n lines > $MAX)"; status=1; fi; done; exit $status'
+        args: ["--"]
+        types: [python]
+
+      # ---- Unit tests --------------------------------------------------------
+      - id: tests-unit
+        name: "run unit tests"
+        language: system
+        entry: python3 -m pytest tests/unit/ -q --tb=short
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # ---- Coverage gate -----------------------------------------------------
+      - id: coverage-gate
+        name: "check test coverage >= 87%"
+        language: system
+        entry: python3 -m pytest tests/unit/ --cov=src --cov-fail-under=87 -q --tb=short --no-header
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]

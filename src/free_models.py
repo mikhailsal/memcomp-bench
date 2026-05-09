@@ -58,13 +58,15 @@ def list_free_models(
         if require_tools and not has_tools:
             continue
 
-        results.append(ModelInfo(
-            id=m["id"],
-            name=m.get("name", m["id"]),
-            context_length=m.get("context_length", 0),
-            supports_tools=has_tools,
-            supports_tool_choice=has_tool_choice,
-        ))
+        results.append(
+            ModelInfo(
+                id=m["id"],
+                name=m.get("name", m["id"]),
+                context_length=m.get("context_length", 0),
+                supports_tools=has_tools,
+                supports_tool_choice=has_tool_choice,
+            )
+        )
 
     def _sort_key(info: ModelInfo) -> tuple[int, int, str]:
         family_bonus = 1 if any(f in info.id.lower() for f in PREFERRED_FAMILIES) else 0

@@ -6,20 +6,20 @@ import json
 import sys
 import time
 from pathlib import Path
-from unittest import mock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # config — ensure_dirs / load_api_key
 # ---------------------------------------------------------------------------
+
 
 class TestEnsureDirs:
     def test_creates_output_dir(self, tmp_path: Path, monkeypatch):
         out = tmp_path / "new_output"
         monkeypatch.setattr("src.config.OUTPUT_DIR", out)
         from src.config import ensure_dirs
+
         ensure_dirs()
         assert out.is_dir()
 
@@ -28,6 +28,7 @@ class TestEnsureDirs:
         out.mkdir()
         monkeypatch.setattr("src.config.OUTPUT_DIR", out)
         from src.config import ensure_dirs
+
         ensure_dirs()
         assert out.is_dir()
 
@@ -39,6 +40,7 @@ class TestLoadApiKey:
         monkeypatch.setattr("src.config.ENV_PATH", env_file)
         monkeypatch.setenv("OPENROUTER_KEY", "test-key-123")
         from src.config import load_api_key
+
         assert load_api_key() == "test-key-123"
 
     def test_exits_when_missing(self, monkeypatch, tmp_path: Path):
@@ -47,6 +49,7 @@ class TestLoadApiKey:
         monkeypatch.setattr("src.config.ENV_PATH", env_file)
         monkeypatch.delenv("OPENROUTER_KEY", raising=False)
         from src.config import load_api_key
+
         with pytest.raises(SystemExit):
             load_api_key()
 
@@ -56,6 +59,7 @@ class TestLoadApiKey:
         monkeypatch.setattr("src.config.ENV_PATH", env_file)
         monkeypatch.setenv("OPENROUTER_KEY", "your-key-here")
         from src.config import load_api_key
+
         with pytest.raises(SystemExit):
             load_api_key()
 
@@ -64,22 +68,26 @@ class TestLoadApiKey:
 # cli — _resolve_profile
 # ---------------------------------------------------------------------------
 
+
 class TestResolveProfile:
     def test_by_index(self):
         from src.cli import _resolve_profile
         from src.prompts import HUMAN_PROFILES
+
         p = _resolve_profile("0")
         assert p["name"] == HUMAN_PROFILES[0]["name"]
 
     def test_by_name_case_insensitive(self):
         from src.cli import _resolve_profile
         from src.prompts import HUMAN_PROFILES
+
         name = HUMAN_PROFILES[0]["name"]
         p = _resolve_profile(name.upper())
         assert p["name"] == name
 
     def test_unknown_exits(self):
         from src.cli import _resolve_profile
+
         with pytest.raises(SystemExit):
             _resolve_profile("nonexistent_profile_xyz")
 
@@ -88,9 +96,11 @@ class TestResolveProfile:
 # cli — main() dispatch
 # ---------------------------------------------------------------------------
 
+
 class TestMainDispatch:
     def test_no_args_prints_help(self, capsys):
         from src.cli import main
+
         with pytest.raises(SystemExit) as exc:
             sys.argv = ["memcomp"]
             main()
@@ -98,6 +108,7 @@ class TestMainDispatch:
 
     def test_profiles_command(self, capsys):
         from src.cli import main
+
         sys.argv = ["memcomp", "profiles"]
         main()
         out = capsys.readouterr().out
@@ -105,6 +116,7 @@ class TestMainDispatch:
 
     def test_generate_calls_handler(self, monkeypatch):
         from src.cli import main
+
         called = {}
 
         def fake_generate(args):
@@ -117,6 +129,7 @@ class TestMainDispatch:
 
     def test_resume_calls_handler(self, monkeypatch, tmp_path):
         from src.cli import main
+
         called = {}
 
         def fake_resume(args):
@@ -131,6 +144,7 @@ class TestMainDispatch:
 
     def test_reformat_calls_handler(self, monkeypatch, tmp_path):
         from src.cli import main
+
         called = {}
 
         def fake_reformat(args):
@@ -149,6 +163,7 @@ class TestCmdReformatDirect:
 
     def test_reformat_produces_md(self, monkeypatch, tmp_path):
         import json
+
         from src.generator import ConversationRecord, ConversationTurn, save_conversation
 
         profile = {"name": "TestUser", "backstory": "A tester."}
@@ -168,18 +183,27 @@ class TestCmdReformatDirect:
         record.ai_messages_raw = [
             {"role": "system", "content": "prompt"},
             {"role": "user", "content": "[start]"},
-            {"role": "assistant", "content": None,
-             "tool_calls": [{"id": "tc1", "type": "function",
-                             "function": {"name": "write_message_to_human",
-                                          "arguments": json.dumps({"text": "Hello"})}}]},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "write_message_to_human", "arguments": json.dumps({"text": "Hello"})},
+                    }
+                ],
+            },
         ]
 
         jsonl_path = save_conversation(record, tmp_path)
         md_path = jsonl_path.with_suffix(".md")
         md_path.write_text("CORRUPTED")
 
-        from src.cli import cmd_reformat
         from argparse import Namespace
+
+        from src.cli import cmd_reformat
+
         cmd_reformat(Namespace(file=str(jsonl_path)))
         assert md_path.read_text() != "CORRUPTED"
         assert "TestUser" in md_path.read_text()
@@ -205,16 +229,24 @@ class TestCmdGenerateIntegration:
         # Human
         fake.enqueue(make_plain_response("Hey!"))
         # AI
-        fake.enqueue(make_tool_call_response(
-            "Hello!", tool_call_id="wmth00002",
-            prompt_tokens=600, completion_tokens=30,
-        ))
+        fake.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
         # Extra buffer
         fake.enqueue(make_plain_response("More."))
-        fake.enqueue(make_tool_call_response(
-            "Done!", tool_call_id="wmth00003",
-            prompt_tokens=700, completion_tokens=30,
-        ))
+        fake.enqueue(
+            make_tool_call_response(
+                "Done!",
+                tool_call_id="wmth00003",
+                prompt_tokens=700,
+                completion_tokens=30,
+            )
+        )
 
         monkeypatch.setattr(
             "src.cli.OpenRouterClient",
@@ -222,6 +254,7 @@ class TestCmdGenerateIntegration:
         )
 
         from argparse import Namespace
+
         from src.cli import cmd_generate
 
         args = Namespace(
@@ -267,12 +300,18 @@ class TestCmdResumeIntegration:
         )
         record.turns = [
             ConversationTurn(turn_number=1, speaker="human", visible_text="Hi"),
-            ConversationTurn(turn_number=2, speaker="ai", visible_text="Hello",
-                             ai_tool_calls=[{
-                                 "id": "wmth00001", "type": "function",
-                                 "function": {"name": "write_message_to_human",
-                                              "arguments": json.dumps({"text": "Hello"})},
-                             }]),
+            ConversationTurn(
+                turn_number=2,
+                speaker="ai",
+                visible_text="Hello",
+                ai_tool_calls=[
+                    {
+                        "id": "wmth00001",
+                        "type": "function",
+                        "function": {"name": "write_message_to_human", "arguments": json.dumps({"text": "Hello"})},
+                    }
+                ],
+            ),
         ]
         record.total_tokens_estimate = 10
         record.started_at = "2026-01-01T00:00:00Z"
@@ -280,10 +319,17 @@ class TestCmdResumeIntegration:
         record.ai_messages_raw = [
             {"role": "system", "content": "prompt"},
             {"role": "user", "content": "[start]"},
-            {"role": "assistant", "content": None,
-             "tool_calls": [{"id": "wmth00001", "type": "function",
-                             "function": {"name": "write_message_to_human",
-                                          "arguments": json.dumps({"text": "Hello"})}}]},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "wmth00001",
+                        "type": "function",
+                        "function": {"name": "write_message_to_human", "arguments": json.dumps({"text": "Hello"})},
+                    }
+                ],
+            },
             {"role": "tool", "content": "Hi", "tool_call_id": "wmth00001"},
         ]
 
@@ -297,18 +343,22 @@ class TestCmdResumeIntegration:
         fake = FakeChatClient()
         for i in range(6):
             if i % 2 == 0:
-                fake.enqueue(make_tool_call_response(
-                    f"Continued AI {i}",
-                    tool_call_id=f"wmth_r{i:03d}",
-                    prompt_tokens=700 + i * 50,
-                    completion_tokens=30,
-                ))
+                fake.enqueue(
+                    make_tool_call_response(
+                        f"Continued AI {i}",
+                        tool_call_id=f"wmth_r{i:03d}",
+                        prompt_tokens=700 + i * 50,
+                        completion_tokens=30,
+                    )
+                )
             else:
-                fake.enqueue(make_plain_response(
-                    f"Continued Human {i}",
-                    prompt_tokens=700 + i * 50,
-                    completion_tokens=25,
-                ))
+                fake.enqueue(
+                    make_plain_response(
+                        f"Continued Human {i}",
+                        prompt_tokens=700 + i * 50,
+                        completion_tokens=25,
+                    )
+                )
 
         monkeypatch.setattr(
             "src.cli.OpenRouterClient",
@@ -316,6 +366,7 @@ class TestCmdResumeIntegration:
         )
 
         from argparse import Namespace
+
         from src.cli import cmd_resume
 
         args = Namespace(

@@ -9,12 +9,12 @@ from typing import Any
 import httpx
 import pytest
 
-from src.openrouter_client import OpenRouterClient, LLMResponse, Usage
-
+from src.openrouter_client import OpenRouterClient
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _ok_response(
     content: str = "Hello",
@@ -38,10 +38,12 @@ def _ok_response(
     if market_cost is not None:
         usage["market_cost"] = market_cost
     return {
-        "choices": [{
-            "message": {"content": content, "role": "assistant"},
-            "finish_reason": "stop",
-        }],
+        "choices": [
+            {
+                "message": {"content": content, "role": "assistant"},
+                "finish_reason": "stop",
+            }
+        ],
         "usage": usage,
     }
 
@@ -61,6 +63,7 @@ def _make_client(handler) -> OpenRouterClient:
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
+
 
 class TestHappyPath:
     def test_200_returns_content(self):
@@ -106,7 +109,8 @@ class TestHappyPath:
 
         client = _make_client(handler)
         client.chat(
-            model="m", messages=[],
+            model="m",
+            messages=[],
             tools=[{"type": "function"}],
             tool_choice={"type": "function", "function": {"name": "fn"}},
             provider={"only": ["prov"]},
@@ -123,6 +127,7 @@ class TestHappyPath:
 # ---------------------------------------------------------------------------
 # Retry on 429 / 5xx
 # ---------------------------------------------------------------------------
+
 
 class TestRetry:
     def test_429_then_200(self, monkeypatch):
@@ -167,6 +172,7 @@ class TestRetry:
 # Network errors
 # ---------------------------------------------------------------------------
 
+
 class TestNetworkError:
     def test_retries_on_connection_error(self, monkeypatch):
         monkeypatch.setattr(time, "sleep", lambda _: None)
@@ -200,6 +206,7 @@ class TestNetworkError:
 # ---------------------------------------------------------------------------
 # BYOK cost accounting
 # ---------------------------------------------------------------------------
+
 
 class TestCostAccounting:
     def test_byok_adds_upstream_cost(self):
@@ -236,20 +243,26 @@ class TestCostAccounting:
 # Tool calls in response
 # ---------------------------------------------------------------------------
 
+
 class TestToolCallResponse:
     def test_tool_calls_parsed(self):
         body = {
-            "choices": [{
-                "message": {
-                    "content": None,
-                    "role": "assistant",
-                    "tool_calls": [{
-                        "id": "tc_1", "type": "function",
-                        "function": {"name": "write_message_to_human", "arguments": '{"text":"hi"}'},
-                    }],
-                },
-                "finish_reason": "tool_calls",
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "content": None,
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "tc_1",
+                                "type": "function",
+                                "function": {"name": "write_message_to_human", "arguments": '{"text":"hi"}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0},
         }
 
@@ -264,15 +277,17 @@ class TestToolCallResponse:
 
     def test_reasoning_fields_parsed(self):
         body = {
-            "choices": [{
-                "message": {
-                    "content": None,
-                    "reasoning": "deep thought",
-                    "reasoning_details": [{"type": "reasoning.text", "text": "hmm"}],
-                    "role": "assistant",
-                },
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "content": None,
+                        "reasoning": "deep thought",
+                        "reasoning_details": [{"type": "reasoning.text", "text": "hmm"}],
+                        "role": "assistant",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0},
         }
 
@@ -289,6 +304,7 @@ class TestToolCallResponse:
 # ---------------------------------------------------------------------------
 # close()
 # ---------------------------------------------------------------------------
+
 
 class TestClose:
     def test_close_is_idempotent(self):

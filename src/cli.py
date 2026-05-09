@@ -22,7 +22,7 @@ from src.config import (
     ensure_dirs,
     load_api_key,
 )
-from src.generator import ConversationGenerator, save_conversation, reformat_markdown, _estimate_context_tokens, _UNSET
+from src.generator import _UNSET, ConversationGenerator, reformat_markdown, save_conversation
 from src.openrouter_client import OpenRouterClient
 from src.prompts import HUMAN_PROFILES, get_human_profile
 
@@ -127,11 +127,13 @@ def cmd_resume(args: argparse.Namespace) -> None:
             human_model_override=args.human_model or None,
             # None = not specified (use saved); "" = clear; slug = lock to that provider
             ai_provider_override=(
-                _UNSET if args.provider is None
+                _UNSET
+                if args.provider is None
                 else ({"only": [args.provider], "allow_fallbacks": False} if args.provider else None)
             ),
             human_provider_override=(
-                _UNSET if args.human_provider is None
+                _UNSET
+                if args.human_provider is None
                 else ({"only": [args.human_provider], "allow_fallbacks": False} if args.human_provider else None)
             ),
             ai_temperature_override=args.ai_temperature,
@@ -152,6 +154,7 @@ def cmd_resume(args: argparse.Namespace) -> None:
 def cmd_reformat(args: argparse.Namespace) -> None:
     """Reformat the markdown file for an existing conversation."""
     from pathlib import Path
+
     md_path = reformat_markdown(Path(args.file))
     console.print(f"[bold]Reformatted:[/bold] {md_path}")
 
@@ -165,58 +168,77 @@ def cmd_list_profiles(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Memory Compression Benchmark — Conversation Generator"
-    )
+    parser = argparse.ArgumentParser(description="Memory Compression Benchmark — Conversation Generator")
     sub = parser.add_subparsers(dest="command")
 
     # generate
     gen = sub.add_parser("generate", help="Generate a conversation")
     gen.add_argument(
-        "--profile", type=str, default="0",
+        "--profile",
+        type=str,
+        default="0",
         help="Human profile name or index (see 'profiles' command). E.g. --profile vitaly",
     )
     gen.add_argument("--ai-model", type=str, help=f"AI model (default: {AI_MODEL})")
     gen.add_argument("--human-model", type=str, help=f"Human model (default: {HUMAN_MODEL})")
     gen.add_argument(
-        "--provider", type=str, default=None,
+        "--provider",
+        type=str,
+        default=None,
         help="Force a specific OpenRouter provider slug for the AI model (e.g. 'minimax')",
     )
     gen.add_argument(
-        "--human-provider", type=str, default=None,
+        "--human-provider",
+        type=str,
+        default=None,
         help="Force a specific OpenRouter provider slug for the human simulator model",
     )
     gen.add_argument(
-        "--ai-temperature", type=float, default=None,
+        "--ai-temperature",
+        type=float,
+        default=None,
         help=f"Override AI model temperature (default: {AI_TEMPERATURE})",
     )
     gen.add_argument(
-        "--human-temperature", type=float, default=None,
+        "--human-temperature",
+        type=float,
+        default=None,
         help=f"Override human simulator temperature (default: {HUMAN_TEMPERATURE})",
     )
     gen.add_argument(
-        "--target-tokens", type=int,
+        "--target-tokens",
+        type=int,
         help=f"Target token count (default: {TARGET_TOKENS:,})",
     )
     gen.add_argument(
-        "--language", type=str, default="english",
+        "--language",
+        type=str,
+        default="english",
         help="Language for conversation (default: english). E.g. 'russian', 'hebrew'",
     )
     gen.add_argument(
-        "--companion-mode", type=str, default="honest",
+        "--companion-mode",
+        type=str,
+        default="honest",
         choices=["honest"],
         help="Companion mode (default: honest — values honesty over comfort)",
     )
     gen.add_argument(
-        "--ai-max-tokens", type=int, default=None,
+        "--ai-max-tokens",
+        type=int,
+        default=None,
         help=f"Override AI model max tokens per response (default: {AI_MAX_TOKENS})",
     )
     gen.add_argument(
-        "--human-max-tokens", type=int, default=None,
+        "--human-max-tokens",
+        type=int,
+        default=None,
         help=f"Override human simulator max tokens per response (default: {HUMAN_MAX_TOKENS})",
     )
     gen.add_argument(
-        "-v", "--verbose", action="store_true",
+        "-v",
+        "--verbose",
+        action="store_true",
         help="Show full messages and AI thinking in real time",
     )
     gen.set_defaults(func=cmd_generate)
@@ -224,51 +246,73 @@ def main() -> None:
     # resume
     res = sub.add_parser("resume", help="Resume/extend an existing conversation")
     res.add_argument(
-        "file", type=str,
+        "file",
+        type=str,
         help="Path to the JSONL file of the conversation to resume",
     )
     res.add_argument(
-        "--target-tokens", type=int,
+        "--target-tokens",
+        type=int,
         help=f"New target token count (default: {TARGET_TOKENS:,})",
     )
     res.add_argument(
-        "--language", type=str, default=None,
+        "--language",
+        type=str,
+        default=None,
         help="Override language (normally loaded from saved conversation)",
     )
     res.add_argument(
-        "--provider", type=str, default=None,
+        "--provider",
+        type=str,
+        default=None,
         help="Override AI provider slug (e.g. 'minimax'). Normally loaded from saved conversation.",
     )
     res.add_argument(
-        "--human-provider", type=str, default=None,
+        "--human-provider",
+        type=str,
+        default=None,
         help="Override human simulator provider slug. Normally loaded from saved conversation.",
     )
     res.add_argument(
-        "--ai-temperature", type=float, default=None,
+        "--ai-temperature",
+        type=float,
+        default=None,
         help="Override AI model temperature. Normally loaded from saved conversation.",
     )
     res.add_argument(
-        "--human-temperature", type=float, default=None,
+        "--human-temperature",
+        type=float,
+        default=None,
         help="Override human simulator temperature. Normally loaded from saved conversation.",
     )
     res.add_argument(
-        "--ai-model", type=str, default=None,
+        "--ai-model",
+        type=str,
+        default=None,
         help="Override AI model (default: use model from saved conversation)",
     )
     res.add_argument(
-        "--human-model", type=str, default=None,
+        "--human-model",
+        type=str,
+        default=None,
         help="Override human simulator model (default: use model from saved conversation)",
     )
     res.add_argument(
-        "--ai-max-tokens", type=int, default=None,
+        "--ai-max-tokens",
+        type=int,
+        default=None,
         help="Override AI model max tokens per response. Normally loaded from saved conversation.",
     )
     res.add_argument(
-        "--human-max-tokens", type=int, default=None,
+        "--human-max-tokens",
+        type=int,
+        default=None,
         help="Override human simulator max tokens per response. Normally loaded from saved conversation.",
     )
     res.add_argument(
-        "-v", "--verbose", action="store_true",
+        "-v",
+        "--verbose",
+        action="store_true",
         help="Show full messages and AI thinking in real time",
     )
     res.set_defaults(func=cmd_resume)

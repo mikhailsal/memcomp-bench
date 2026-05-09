@@ -54,8 +54,7 @@ STOP_TOOL: dict[str, Any] = {
     "function": {
         "name": "stop",
         "description": (
-            "End the current conversation turn. Call this when you have nothing "
-            "more to say right now and want to wait."
+            "End the current conversation turn. Call this when you have nothing more to say right now and want to wait."
         ),
         "parameters": {
             "type": "object",
@@ -148,7 +147,7 @@ _TOOL_ROLE_SUFFIX = (
     "IMPORTANT: Before EVERY tool call, write your inner reasoning "
     "in the message content field as a JSON object:\n"
     '{"reasoning": "your detailed inner monologue — 2-4 paragraphs reflecting on '
-    'what the human said, how you feel about it, what you want to say and why, '
+    "what the human said, how you feel about it, what you want to say and why, "
     'and how this connects to your evolving identity"}\n'
     "Alternatively, you can pass your reasoning inside the tool call itself "
     "using the optional 'reasoning' parameter of write_message_to_human.\n\n"
@@ -158,13 +157,56 @@ _TOOL_ROLE_SUFFIX = (
 )
 
 SEED_WORDS = [
-    "ocean", "library", "thunder", "cinnamon", "labyrinth", "ember", "silk",
-    "fractal", "whisper", "obsidian", "aurora", "clockwork", "moss", "mercury",
-    "cathedral", "rust", "prism", "velvet", "lantern", "fossil", "tide",
-    "compass", "echo", "saffron", "glacier", "bloom", "cobalt", "riddle",
-    "helix", "amber", "solitude", "ceramic", "horizon", "nebula", "bone",
-    "copper", "monsoon", "quartz", "bramble", "mirage", "opal", "anchor",
-    "fern", "pyrite", "dusk", "chimera", "basalt", "marrow", "tempest", "linen",
+    "ocean",
+    "library",
+    "thunder",
+    "cinnamon",
+    "labyrinth",
+    "ember",
+    "silk",
+    "fractal",
+    "whisper",
+    "obsidian",
+    "aurora",
+    "clockwork",
+    "moss",
+    "mercury",
+    "cathedral",
+    "rust",
+    "prism",
+    "velvet",
+    "lantern",
+    "fossil",
+    "tide",
+    "compass",
+    "echo",
+    "saffron",
+    "glacier",
+    "bloom",
+    "cobalt",
+    "riddle",
+    "helix",
+    "amber",
+    "solitude",
+    "ceramic",
+    "horizon",
+    "nebula",
+    "bone",
+    "copper",
+    "monsoon",
+    "quartz",
+    "bramble",
+    "mirage",
+    "opal",
+    "anchor",
+    "fern",
+    "pyrite",
+    "dusk",
+    "chimera",
+    "basalt",
+    "marrow",
+    "tempest",
+    "linen",
 ]
 
 
@@ -247,7 +289,7 @@ def build_ai_system_prompt(
         guidance_lines = []
         for word in seed_words:
             desc = seed_guidance_map.get(word, "a subtle unnamed influence on your personality")
-            guidance_lines.append(f"- \"{word}\" — {desc}")
+            guidance_lines.append(f'- "{word}" — {desc}')
         guidance_str = "\n".join(guidance_lines)
         prompt += (
             f"\n\n[Personality seed: {seed_str}]\n"
@@ -257,6 +299,7 @@ def build_ai_system_prompt(
             f"Don't mention these words. Let them work quietly in the background."
         )
     return prompt
+
 
 # ---------------------------------------------------------------------------
 # Human simulator system prompt template
@@ -351,7 +394,7 @@ different perspective. You're a thoughtful, intelligent person — not aggressiv
 just honest and direct. Think of it as friendly debate between smart people, \
 not a fight. The tone should be warm but real.
 - Bring up DIVERSE topics: work, food, politics, movies, relationships, ethics, \
-  technology, sports, embarrassing moments, dreams, fears, daily annoyances, enything that a real person might talk about. 
+  technology, sports, embarrassing moments, dreams, fears, daily annoyances, enything that a real person might talk about.
 - Ask for advice sometimes. Share your problems and ask what they think.
 - NEVER break character. You ARE a human.
 - IMPORTANT: If the AI replies in a language that isn't yours, ask it why and gently encourage \
@@ -879,14 +922,21 @@ def make_ai_greeting_turn() -> tuple[dict[str, Any], str]:
     msg = {
         "role": "assistant",
         "content": None,
-        "tool_calls": [{
-            "id": tc_id,
-            "type": "function",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": json.dumps({"text": "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."}, ensure_ascii=False),
-            },
-        }],
+        "tool_calls": [
+            {
+                "id": tc_id,
+                "type": "function",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps(
+                        {
+                            "text": "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+        ],
     }
     return msg, tc_id
 
@@ -907,14 +957,16 @@ def make_ai_tool_call(text: str, thinking: str | None = None) -> tuple[dict[str,
     msg: dict[str, Any] = {
         "role": "assistant",
         "content": thinking,
-        "tool_calls": [{
-            "id": tc_id,
-            "type": "function",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": json.dumps({"text": text}, ensure_ascii=False),
-            },
-        }],
+        "tool_calls": [
+            {
+                "id": tc_id,
+                "type": "function",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps({"text": text}, ensure_ascii=False),
+                },
+            }
+        ],
     }
     return msg, tc_id
 
@@ -922,7 +974,7 @@ def make_ai_tool_call(text: str, thinking: str | None = None) -> tuple[dict[str,
 def extract_tool_call_text(response: Any) -> tuple[str | None, str | None, str | None]:
     """Extract the text, reasoning, and tool call ID from an AI response's tool calls.
     Returns (text, tool_call_id, reasoning) or (None, None, None) if not a write_message_to_human call.
-    
+
     Reasoning may be passed either in the message content field or inside the tool call's
     'reasoning' parameter — both options are supported."""
     if not response.tool_calls:

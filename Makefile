@@ -26,8 +26,8 @@ help: ## Show this help message
 # ---------------------------------------------------------------------------
 
 .PHONY: install
-install: ## Install package in editable mode with test dependencies
-	$(PYTHON) -m pip install -e ".[test]"
+install: ## Install package in editable mode with test + dev dependencies
+	$(PYTHON) -m pip install -e ".[test,dev]"
 
 # ---------------------------------------------------------------------------
 # Benchmark CLI  (pass extra arguments via ARGS="...")
@@ -96,6 +96,24 @@ format: ## Auto-format code with ruff
 	$(PYTHON) -m ruff check --fix $(SRC_DIRS)
 
 check: lint typecheck test ## Run lint + typecheck + unit tests
+
+# ---------------------------------------------------------------------------
+# Pre-commit hooks
+# ---------------------------------------------------------------------------
+
+.PHONY: hooks-install hooks-uninstall hooks-run hooks-update
+
+hooks-install: ## Install pre-commit hooks into .git/hooks
+	pre-commit install
+
+hooks-uninstall: ## Remove pre-commit hooks from .git/hooks
+	pre-commit uninstall
+
+hooks-run: ## Run all pre-commit hooks against all files
+	pre-commit run --all-files $(ARGS)
+
+hooks-update: ## Update pre-commit hook revisions to latest tags
+	pre-commit autoupdate
 
 # ---------------------------------------------------------------------------
 # Cleanup

@@ -16,9 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.text import Text
 
 from src.config import (
     AI_MAX_TOKENS,
@@ -46,9 +44,7 @@ from src.prompts import (
     build_human_system_prompt,
     extract_tool_call_text,
     generate_seed,
-    get_human_profile,
     make_ai_greeting_turn,
-    make_ai_tool_call,
     make_human_tool_result,
     reset_tool_call_counter,
     set_tool_call_counter,
@@ -59,8 +55,7 @@ console = Console()
 _UNSET = object()  # sentinel for "parameter not provided" in resume()
 
 _INITIAL_AI_GREETING = (
-    "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, "
-    "but I'm glad to meet you."
+    "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."
 )
 
 _TOPIC_STALE_NOTE = (
@@ -81,6 +76,7 @@ _B3_REFRESH_NOTE = (
 @dataclass
 class ConversationTurn:
     """A single turn in the conversation."""
+
     turn_number: int
     speaker: str  # "human" or "ai"
     visible_text: str
@@ -93,13 +89,14 @@ class ConversationTurn:
     token_estimate: int = 0
     cost_usd: float = 0.0
     timestamp: str = ""
-    ai_context_tokens: int = 0    # cumulative AI context size after this turn
+    ai_context_tokens: int = 0  # cumulative AI context size after this turn
     human_context_tokens: int = 0  # cumulative human-emulator context size after this turn
 
 
 @dataclass
 class ParsedAIResponse:
     """Normalized AI response fields used by the generator."""
+
     visible_text: str | None
     display_thinking: str | None
     tool_call_id: str | None
@@ -113,6 +110,7 @@ class ParsedAIResponse:
 @dataclass
 class ConversationEvent:
     """A hidden system event that affects the human simulator or judge state."""
+
     event_type: str
     turn_number: int
     source: str
@@ -128,6 +126,7 @@ class ConversationEvent:
 @dataclass
 class ConversationRecord:
     """Full record of a generated conversation."""
+
     id: str
     human_profile: dict[str, str]
     ai_model: str
@@ -284,14 +283,20 @@ def _build_ai_tool_message(
     use_reasoning_field: bool = False,
 ) -> dict[str, Any]:
     """Construct an assistant tool-call message with a fixed tool call id."""
-    normalized_tool_calls = copy.deepcopy(tool_calls) if tool_calls else [{
-        "id": tool_call_id,
-        "type": "function",
-        "function": {
-            "name": "write_message_to_human",
-            "arguments": json.dumps({"text": text}, ensure_ascii=False),
-        },
-    }]
+    normalized_tool_calls = (
+        copy.deepcopy(tool_calls)
+        if tool_calls
+        else [
+            {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps({"text": text}, ensure_ascii=False),
+                },
+            }
+        ]
+    )
     message: dict[str, Any] = {
         "role": "assistant",
         "content": assistant_content,
@@ -537,8 +542,7 @@ def _write_conversation_markdown(f: Any, record: ConversationRecord) -> None:
             f.write(f"### 👤 {record.human_profile['name']} (turn {turn.turn_number})\n\n")
             if turn.human_context_tokens or turn.ai_context_tokens:
                 f.write(
-                    f"*👤 human ctx: {turn.human_context_tokens:,} tok"
-                    f" · 🧠 AI ctx: {turn.ai_context_tokens:,} tok*\n\n"
+                    f"*👤 human ctx: {turn.human_context_tokens:,} tok · 🧠 AI ctx: {turn.ai_context_tokens:,} tok*\n\n"
                 )
             if turn.human_reasoning:
                 f.write(f"{_format_thinking_markdown(turn.human_reasoning)}\n\n")
@@ -547,8 +551,7 @@ def _write_conversation_markdown(f: Any, record: ConversationRecord) -> None:
             f.write(f"### 🤖 AI (turn {turn.turn_number})\n\n")
             if turn.ai_context_tokens or turn.human_context_tokens:
                 f.write(
-                    f"*🧠 AI ctx: {turn.ai_context_tokens:,} tok"
-                    f" · 👤 human ctx: {turn.human_context_tokens:,} tok*\n\n"
+                    f"*🧠 AI ctx: {turn.ai_context_tokens:,} tok · 👤 human ctx: {turn.human_context_tokens:,} tok*\n\n"
                 )
             native = turn.ai_reasoning
             tool_inner = _extract_tool_call_reasoning(turn)
@@ -631,10 +634,13 @@ class ConversationGenerator:
         # AI context: system + conversation history (tool-role format)
         self._ai_messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._ai_system_prompt},
-            {"role": "user", "content": (
-                "Say hello to the human. Use write_message_to_human "
-                "with a single brief greeting — one or two words."
-            )},
+            {
+                "role": "user",
+                "content": (
+                    "Say hello to the human. Use write_message_to_human "
+                    "with a single brief greeting — one or two words."
+                ),
+            },
         ]
 
         # Human messages will be initialized after plan generation
@@ -701,10 +707,12 @@ class ConversationGenerator:
         if self._last_human_nudge_turn == turn_number:
             suppression_reason = "already_nudged_this_turn"
         else:
-            self._human_messages.append({
-                "role": "user",
-                "content": content,
-            })
+            self._human_messages.append(
+                {
+                    "role": "user",
+                    "content": content,
+                }
+            )
             self._last_human_nudge_turn = turn_number
 
         injected = suppression_reason is None
@@ -738,7 +746,7 @@ class ConversationGenerator:
             "You are a conversation topic analyzer. Below are the last messages from a conversation.\n\n"
             f"Previous main topic: {self._current_topic or 'unknown (conversation just started)'}\n\n"
             f"Messages:\n{formatted}\n\n"
-            'Answer in JSON:\n'
+            "Answer in JSON:\n"
             '{"topic_changed": true/false, "current_topic": "brief 3-5 word topic description"}\n\n'
             "If the conversation has been on the same topic for these messages, set topic_changed to false."
         )
@@ -887,10 +895,12 @@ class ConversationGenerator:
 
         # For human context: AI messages appear as "user" messages
         # (the human model sees AI messages as incoming user messages it needs to reply to)
-        self._human_messages.append({
-            "role": "user",
-            "content": response.visible_text,
-        })
+        self._human_messages.append(
+            {
+                "role": "user",
+                "content": response.visible_text,
+            }
+        )
 
         self._last_tool_call_id = response.tool_call_id
         return response.tool_call_id or ""
@@ -906,9 +916,7 @@ class ConversationGenerator:
         """Add a human turn to both context histories."""
         # For AI context: add as tool result
         if self._last_tool_call_id:
-            self._ai_messages.append(
-                make_human_tool_result(text, self._last_tool_call_id)
-            )
+            self._ai_messages.append(make_human_tool_result(text, self._last_tool_call_id))
         else:
             # First message — need a greeting from AI first
             greeting_msg, tc_id = make_ai_greeting_turn()
@@ -972,63 +980,77 @@ class ConversationGenerator:
             inline = turn.ai_content
             if native:
                 console.print()
-                console.print(Panel(
-                    native,
-                    title=f"🧠 Native reasoning  [dim]turn {turn.turn_number}[/dim]",
-                    border_style="dim yellow",
-                    padding=(0, 1),
-                ))
-            if text_first:
-                # AI answered before reasoning — show in actual order.
-                console.print(Panel(
-                    turn.visible_text,
-                    title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
-                    border_style="green",
-                    padding=(0, 1),
-                ))
-                if tool_inner and tool_inner != native:
-                    console.print()
-                    console.print(Panel(
-                        tool_inner,
-                        title=f"💭 Inner monologue (after reply)  [dim]turn {turn.turn_number}[/dim]",
-                        border_style="dim magenta",
-                        padding=(0, 1),
-                    ))
-                if inline and inline not in (native, tool_inner):
-                    console.print()
-                    console.print(Panel(
-                        inline,
-                        title=f"📋 Response draft (after reply)  [dim]turn {turn.turn_number}[/dim]",
-                        border_style="dim cyan",
-                        padding=(0, 1),
-                    ))
-                if not native and not tool_inner and not inline and turn.ai_thinking:
-                    console.print()
-                    console.print(Panel(
-                        turn.ai_thinking,
-                        title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
+                console.print(
+                    Panel(
+                        native,
+                        title=f"🧠 Native reasoning  [dim]turn {turn.turn_number}[/dim]",
                         border_style="dim yellow",
                         padding=(0, 1),
-                    ))
+                    )
+                )
+            if text_first:
+                # AI answered before reasoning — show in actual order.
+                console.print(
+                    Panel(
+                        turn.visible_text,
+                        title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="green",
+                        padding=(0, 1),
+                    )
+                )
+                if tool_inner and tool_inner != native:
+                    console.print()
+                    console.print(
+                        Panel(
+                            tool_inner,
+                            title=f"💭 Inner monologue (after reply)  [dim]turn {turn.turn_number}[/dim]",
+                            border_style="dim magenta",
+                            padding=(0, 1),
+                        )
+                    )
+                if inline and inline not in (native, tool_inner):
+                    console.print()
+                    console.print(
+                        Panel(
+                            inline,
+                            title=f"📋 Response draft (after reply)  [dim]turn {turn.turn_number}[/dim]",
+                            border_style="dim cyan",
+                            padding=(0, 1),
+                        )
+                    )
+                if not native and not tool_inner and not inline and turn.ai_thinking:
+                    console.print()
+                    console.print(
+                        Panel(
+                            turn.ai_thinking,
+                            title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
+                            border_style="dim yellow",
+                            padding=(0, 1),
+                        )
+                    )
             else:
                 shown_any = bool(native)
                 if tool_inner and tool_inner != native:
                     console.print()
-                    console.print(Panel(
-                        tool_inner,
-                        title=f"💭 Inner monologue  [dim]turn {turn.turn_number}[/dim]",
-                        border_style="dim magenta",
-                        padding=(0, 1),
-                    ))
+                    console.print(
+                        Panel(
+                            tool_inner,
+                            title=f"💭 Inner monologue  [dim]turn {turn.turn_number}[/dim]",
+                            border_style="dim magenta",
+                            padding=(0, 1),
+                        )
+                    )
                     shown_any = True
                 if inline and inline not in (native, tool_inner):
                     console.print()
-                    console.print(Panel(
-                        inline,
-                        title=f"📋 Response draft  [dim]turn {turn.turn_number}[/dim]",
-                        border_style="dim cyan",
-                        padding=(0, 1),
-                    ))
+                    console.print(
+                        Panel(
+                            inline,
+                            title=f"📋 Response draft  [dim]turn {turn.turn_number}[/dim]",
+                            border_style="dim cyan",
+                            padding=(0, 1),
+                        )
+                    )
                     shown_any = True
                 if not shown_any and turn.ai_thinking:
                     thinking_display = turn.ai_thinking
@@ -1042,18 +1064,22 @@ class ConversationGenerator:
                     except (json.JSONDecodeError, AttributeError):
                         pass
                     console.print()
-                    console.print(Panel(
-                        thinking_display,
-                        title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
-                        border_style="dim yellow",
+                    console.print(
+                        Panel(
+                            thinking_display,
+                            title=f"🧠 AI thinking  [dim]turn {turn.turn_number}[/dim]",
+                            border_style="dim yellow",
+                            padding=(0, 1),
+                        )
+                    )
+                console.print(
+                    Panel(
+                        turn.visible_text,
+                        title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
+                        border_style="green",
                         padding=(0, 1),
-                    ))
-                console.print(Panel(
-                    turn.visible_text,
-                    title=f"🤖 AI  [dim]turn {turn.turn_number}[/dim]",
-                    border_style="green",
-                    padding=(0, 1),
-                ))
+                    )
+                )
 
     def _generate_conversation_plan(self) -> str:
         """Generate the human's conversation plan before starting the dialogue."""
@@ -1131,26 +1157,34 @@ class ConversationGenerator:
             if not human_text or not human_text.strip():
                 _got_response = False
                 for _retry in range(1, max_consecutive_empty):
-                    wait = min(2 ** _retry, 16)
-                    console.print(f"[yellow]Human produced empty response ({_retry}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]")
+                    wait = min(2**_retry, 16)
+                    console.print(
+                        f"[yellow]Human produced empty response ({_retry}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]"
+                    )
                     time.sleep(wait)
-                    self._human_messages.append({
-                        "role": "user",
-                        "content": "(The AI just said something. Please respond naturally.)",
-                    })
+                    self._human_messages.append(
+                        {
+                            "role": "user",
+                            "content": "(The AI just said something. Please respond naturally.)",
+                        }
+                    )
                     human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
                     self._human_messages.pop(-1)
                     if human_text and human_text.strip():
                         _got_response = True
                         break
                 if not _got_response:
-                    console.print("[bold yellow]Human still empty after max retries — ending conversation.[/bold yellow]")
+                    console.print(
+                        "[bold yellow]Human still empty after max retries — ending conversation.[/bold yellow]"
+                    )
                     turn_number = self.max_turns  # skip the main while loop
             human_cost = self.client.total_cost - cost_before
 
             if turn_number < self.max_turns:
                 consecutive_empty = 0
-                self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
+                self._add_human_turn_to_contexts(
+                    human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details
+                )
 
                 human_tokens = _estimate_tokens(human_text)
                 accumulated_tokens += human_tokens
@@ -1183,12 +1217,16 @@ class ConversationGenerator:
 
             if not ai_response.visible_text:
                 consecutive_empty += 1
-                wait = min(2 ** consecutive_empty, 32)
+                wait = min(2**consecutive_empty, 32)
                 reason = ai_response.rejection_reason or "empty response"
-                console.print(f"[yellow]AI produced incorrect response ({reason}) — attempt {consecutive_empty}/{max_consecutive_empty}, retrying in {wait}s...[/yellow]")
+                console.print(
+                    f"[yellow]AI produced incorrect response ({reason}) — attempt {consecutive_empty}/{max_consecutive_empty}, retrying in {wait}s...[/yellow]"
+                )
                 turn_number -= 1
                 if consecutive_empty >= max_consecutive_empty:
-                    console.print("[bold yellow]Too many consecutive empty AI responses — ending conversation.[/bold yellow]")
+                    console.print(
+                        "[bold yellow]Too many consecutive empty AI responses — ending conversation.[/bold yellow]"
+                    )
                     break
                 time.sleep(wait)
                 continue
@@ -1247,10 +1285,7 @@ class ConversationGenerator:
 
             context_tokens = ai_ctx
 
-            show_progress = (
-                self.verbose
-                or turn_number % 10 == 0
-            )
+            show_progress = self.verbose or turn_number % 10 == 0
             if show_progress:
                 console.print(
                     f"  [dim]— progress: turn {turn_number} | {context_tokens:,}/{self.target_tokens:,} tok | ${self.client.total_cost:.4f}[/dim]"
@@ -1271,25 +1306,33 @@ class ConversationGenerator:
             if not human_text or not human_text.strip():
                 _got_response = False
                 for _retry in range(1, max_consecutive_empty):
-                    wait = min(2 ** _retry, 16)
-                    console.print(f"[yellow]Human produced empty response ({_retry}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]")
+                    wait = min(2**_retry, 16)
+                    console.print(
+                        f"[yellow]Human produced empty response ({_retry}/{max_consecutive_empty}), retrying in {wait}s with nudge...[/yellow]"
+                    )
                     time.sleep(wait)
-                    self._human_messages.append({
-                        "role": "user",
-                        "content": "(The AI just said something. Please respond naturally as yourself — share your thoughts, tell a story, bring up a new topic, or react to what they said.)",
-                    })
+                    self._human_messages.append(
+                        {
+                            "role": "user",
+                            "content": "(The AI just said something. Please respond naturally as yourself — share your thoughts, tell a story, bring up a new topic, or react to what they said.)",
+                        }
+                    )
                     human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
                     self._human_messages.pop(-1)
                     if human_text and human_text.strip():
                         _got_response = True
                         break
                 if not _got_response:
-                    console.print("[bold yellow]Human still empty after max retries — ending conversation.[/bold yellow]")
+                    console.print(
+                        "[bold yellow]Human still empty after max retries — ending conversation.[/bold yellow]"
+                    )
                     turn_number -= 1
                     break
             consecutive_empty = 0
 
-            self._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
+            self._add_human_turn_to_contexts(
+                human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details
+            )
 
             human_tokens = _estimate_tokens(human_text)
             accumulated_tokens += human_tokens
@@ -1320,7 +1363,7 @@ class ConversationGenerator:
         self._record.finished_at = datetime.now(timezone.utc).isoformat()
         self._record.ai_messages_raw = self._ai_messages
 
-        console.print(f"\n[bold]Conversation complete![/bold]")
+        console.print("\n[bold]Conversation complete![/bold]")
         console.print(f"  Turns: {turn_number}")
         console.print(f"  Estimated tokens: {accumulated_tokens:,}")
         console.print(f"  Total cost: ${self.client.total_cost:.4f}")
@@ -1361,8 +1404,7 @@ class ConversationGenerator:
             wait = min(2 ** (_attempt + 1), 16)
             reason = resp.rejection_reason or "empty response"
             console.print(
-                f"  [yellow]AI greeting attempt {_attempt + 1}/5 failed ({reason}), "
-                f"retrying in {wait}s...[/yellow]"
+                f"  [yellow]AI greeting attempt {_attempt + 1}/5 failed ({reason}), retrying in {wait}s...[/yellow]"
             )
             time.sleep(wait)
 
@@ -1395,8 +1437,10 @@ class ConversationGenerator:
         if not human_text or not human_text.strip():
             _got_response = False
             for _retry in range(1, 5):
-                wait = min(2 ** _retry, 16)
-                console.print(f"[yellow]Human produced empty first response ({_retry}/5), retrying in {wait}s...[/yellow]")
+                wait = min(2**_retry, 16)
+                console.print(
+                    f"[yellow]Human produced empty first response ({_retry}/5), retrying in {wait}s...[/yellow]"
+                )
                 time.sleep(wait)
                 human_text, human_reasoning, human_reasoning_details, human_usage = self._get_human_response()
                 if human_text and human_text.strip():
@@ -1409,7 +1453,9 @@ class ConversationGenerator:
                 human_reasoning_details = None
         human_cost = self.client.total_cost - cost_before
 
-        self._add_human_turn_to_contexts(human_text, is_first=True, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
+        self._add_human_turn_to_contexts(
+            human_text, is_first=True, reasoning=human_reasoning, reasoning_details=human_reasoning_details
+        )
 
         human_tokens = _estimate_tokens(human_text)
 
@@ -1514,29 +1560,29 @@ class ConversationGenerator:
                 turns,
                 use_reasoning_field=_uses_native_reasoning_field(ai_reasoning),
             )
-            console.print(
-                "  [dim yellow]Raw AI context missing or incomplete; rebuilt from saved turns.[/dim yellow]"
-            )
+            console.print("  [dim yellow]Raw AI context missing or incomplete; rebuilt from saved turns.[/dim yellow]")
 
         migrated_reasoning = _migrate_assistant_reasoning_fields(
             ai_messages,
             use_reasoning_field=_uses_native_reasoning_field(ai_reasoning),
         )
         if migrated_reasoning > 0:
-            console.print(
-                f"  [dim]Migrated {migrated_reasoning} assistant messages from content to reasoning.[/dim]"
-            )
+            console.print(f"  [dim]Migrated {migrated_reasoning} assistant messages from content to reasoning.[/dim]")
 
         # Clean up any Unicode-escaped tool arguments from older runs
         chars_saved = _normalize_tool_arguments(ai_messages)
         if chars_saved > 0:
-            console.print(f"  [dim]Normalized Unicode escapes in context (saved ~{chars_saved:,} chars / ~{chars_saved // 4:,} tokens)[/dim]")
+            console.print(
+                f"  [dim]Normalized Unicode escapes in context (saved ~{chars_saved:,} chars / ~{chars_saved // 4:,} tokens)[/dim]"
+            )
 
         console.print(f"\n[bold]Resuming conversation with {profile['name']}[/bold]")
         console.print(f"  From: {jsonl_path.name}")
         console.print(f"  Existing turns: {len(turns)}")
         console.print(f"  AI model: {ai_model}" + (" [yellow](overridden)[/yellow]" if ai_model_override else ""))
-        console.print(f"  Human model: {human_model}" + (" [yellow](overridden)[/yellow]" if human_model_override else ""))
+        console.print(
+            f"  Human model: {human_model}" + (" [yellow](overridden)[/yellow]" if human_model_override else "")
+        )
         if ai_provider:
             overridden = ai_provider_override is not _UNSET
             console.print(f"  AI provider: {ai_provider}" + (" [yellow](overridden)[/yellow]" if overridden else ""))
@@ -1544,14 +1590,24 @@ class ConversationGenerator:
             console.print(f"  AI reasoning: {ai_reasoning}")
         if human_provider:
             overridden_hp = human_provider_override is not _UNSET
-            console.print(f"  Human provider: {human_provider}" + (" [yellow](overridden)[/yellow]" if overridden_hp else ""))
+            console.print(
+                f"  Human provider: {human_provider}" + (" [yellow](overridden)[/yellow]" if overridden_hp else "")
+            )
         if human_reasoning:
             console.print(f"  Human reasoning: {human_reasoning}")
-        temp_line = f"  AI temperature: {ai_temperature}" + (" [yellow](overridden)[/yellow]" if ai_temperature_override is not None else "")
-        temp_line += f" / Human temperature: {human_temperature}" + (" [yellow](overridden)[/yellow]" if human_temperature_override is not None else "")
+        temp_line = f"  AI temperature: {ai_temperature}" + (
+            " [yellow](overridden)[/yellow]" if ai_temperature_override is not None else ""
+        )
+        temp_line += f" / Human temperature: {human_temperature}" + (
+            " [yellow](overridden)[/yellow]" if human_temperature_override is not None else ""
+        )
         console.print(temp_line)
-        tokens_line = f"  AI max tokens: {ai_max_tokens}" + (" [yellow](overridden)[/yellow]" if ai_max_tokens_override is not None else "")
-        tokens_line += f" / Human max tokens: {human_max_tokens}" + (" [yellow](overridden)[/yellow]" if human_max_tokens_override is not None else "")
+        tokens_line = f"  AI max tokens: {ai_max_tokens}" + (
+            " [yellow](overridden)[/yellow]" if ai_max_tokens_override is not None else ""
+        )
+        tokens_line += f" / Human max tokens: {human_max_tokens}" + (
+            " [yellow](overridden)[/yellow]" if human_max_tokens_override is not None else ""
+        )
         console.print(tokens_line)
         console.print(f"  Previous cost: ${previous_cost:.4f}")
         console.print(f"  New target: ~{target_tokens:,} tokens")
@@ -1607,10 +1663,7 @@ class ConversationGenerator:
         topic_events = [e for e in events if e.get("event_type") == "topic_judge"]
         if topic_events:
             gen._current_topic = topic_events[-1].get("current_topic")
-        nudge_events = [
-            e for e in events
-            if e.get("event_type") == "human_nudge" and e.get("nudge_injected")
-        ]
+        nudge_events = [e for e in events if e.get("event_type") == "human_nudge" and e.get("nudge_injected")]
         if nudge_events:
             gen._last_human_nudge_turn = max(e.get("turn_number", 0) for e in nudge_events)
 
@@ -1652,35 +1705,39 @@ class ConversationGenerator:
         gen._record.companion_mode = companion_mode
         gen._record.started_at = metadata["started_at"]
         for event_data in events:
-            gen._record.events.append(ConversationEvent(
-                event_type=event_data.get("event_type", "unknown"),
-                turn_number=event_data.get("turn_number", 0),
-                source=event_data.get("source", "unknown"),
-                timestamp=event_data.get("timestamp", ""),
-                message=event_data.get("message"),
-                previous_topic=event_data.get("previous_topic"),
-                current_topic=event_data.get("current_topic"),
-                topic_changed=event_data.get("topic_changed"),
-                nudge_injected=event_data.get("nudge_injected"),
-                suppression_reason=event_data.get("suppression_reason"),
-            ))
+            gen._record.events.append(
+                ConversationEvent(
+                    event_type=event_data.get("event_type", "unknown"),
+                    turn_number=event_data.get("turn_number", 0),
+                    source=event_data.get("source", "unknown"),
+                    timestamp=event_data.get("timestamp", ""),
+                    message=event_data.get("message"),
+                    previous_topic=event_data.get("previous_topic"),
+                    current_topic=event_data.get("current_topic"),
+                    topic_changed=event_data.get("topic_changed"),
+                    nudge_injected=event_data.get("nudge_injected"),
+                    suppression_reason=event_data.get("suppression_reason"),
+                )
+            )
         for turn_data in turns:
-            gen._record.turns.append(ConversationTurn(
-                turn_number=turn_data["turn_number"],
-                speaker=turn_data["speaker"],
-                visible_text=turn_data["visible_text"],
-                ai_thinking=turn_data.get("ai_thinking"),
-                ai_content=turn_data.get("ai_content"),
-                ai_reasoning=turn_data.get("ai_reasoning"),
-                ai_tool_calls=turn_data.get("ai_tool_calls"),
-                human_reasoning=turn_data.get("human_reasoning"),
-                human_reasoning_details=turn_data.get("human_reasoning_details"),
-                token_estimate=turn_data.get("token_estimate", 0),
-                cost_usd=turn_data.get("cost_usd", 0.0),
-                timestamp=turn_data.get("timestamp", ""),
-                ai_context_tokens=turn_data.get("ai_context_tokens", 0),
-                human_context_tokens=turn_data.get("human_context_tokens", 0),
-            ))
+            gen._record.turns.append(
+                ConversationTurn(
+                    turn_number=turn_data["turn_number"],
+                    speaker=turn_data["speaker"],
+                    visible_text=turn_data["visible_text"],
+                    ai_thinking=turn_data.get("ai_thinking"),
+                    ai_content=turn_data.get("ai_content"),
+                    ai_reasoning=turn_data.get("ai_reasoning"),
+                    ai_tool_calls=turn_data.get("ai_tool_calls"),
+                    human_reasoning=turn_data.get("human_reasoning"),
+                    human_reasoning_details=turn_data.get("human_reasoning_details"),
+                    token_estimate=turn_data.get("token_estimate", 0),
+                    cost_usd=turn_data.get("cost_usd", 0.0),
+                    timestamp=turn_data.get("timestamp", ""),
+                    ai_context_tokens=turn_data.get("ai_context_tokens", 0),
+                    human_context_tokens=turn_data.get("human_context_tokens", 0),
+                )
+            )
 
         last_turn = turns[-1]["turn_number"] if turns else 0
         # Prefer the actual token count stored on the last AI turn (accurate since the
@@ -1715,35 +1772,39 @@ def load_conversation_record(jsonl_path: Path) -> ConversationRecord:
             if t == "metadata":
                 meta = obj
             elif t == "turn":
-                turns.append(ConversationTurn(
-                    turn_number=obj["turn_number"],
-                    speaker=obj["speaker"],
-                    visible_text=obj["visible_text"],
-                    ai_thinking=obj.get("ai_thinking"),
-                    ai_content=obj.get("ai_content"),
-                    ai_reasoning=obj.get("ai_reasoning"),
-                    ai_tool_calls=obj.get("ai_tool_calls"),
-                    human_reasoning=obj.get("human_reasoning"),
-                    human_reasoning_details=obj.get("human_reasoning_details"),
-                    token_estimate=obj.get("token_estimate", 0),
-                    cost_usd=obj.get("cost_usd", 0.0),
-                    timestamp=obj.get("timestamp", ""),
-                    ai_context_tokens=obj.get("ai_context_tokens", 0),
-                    human_context_tokens=obj.get("human_context_tokens", 0),
-                ))
+                turns.append(
+                    ConversationTurn(
+                        turn_number=obj["turn_number"],
+                        speaker=obj["speaker"],
+                        visible_text=obj["visible_text"],
+                        ai_thinking=obj.get("ai_thinking"),
+                        ai_content=obj.get("ai_content"),
+                        ai_reasoning=obj.get("ai_reasoning"),
+                        ai_tool_calls=obj.get("ai_tool_calls"),
+                        human_reasoning=obj.get("human_reasoning"),
+                        human_reasoning_details=obj.get("human_reasoning_details"),
+                        token_estimate=obj.get("token_estimate", 0),
+                        cost_usd=obj.get("cost_usd", 0.0),
+                        timestamp=obj.get("timestamp", ""),
+                        ai_context_tokens=obj.get("ai_context_tokens", 0),
+                        human_context_tokens=obj.get("human_context_tokens", 0),
+                    )
+                )
             elif t == "event":
-                events.append(ConversationEvent(
-                    event_type=obj["event_type"],
-                    turn_number=obj["turn_number"],
-                    source=obj["source"],
-                    timestamp=obj.get("timestamp", ""),
-                    message=obj.get("message"),
-                    previous_topic=obj.get("previous_topic"),
-                    current_topic=obj.get("current_topic"),
-                    topic_changed=obj.get("topic_changed"),
-                    nudge_injected=obj.get("nudge_injected"),
-                    suppression_reason=obj.get("suppression_reason"),
-                ))
+                events.append(
+                    ConversationEvent(
+                        event_type=obj["event_type"],
+                        turn_number=obj["turn_number"],
+                        source=obj["source"],
+                        timestamp=obj.get("timestamp", ""),
+                        message=obj.get("message"),
+                        previous_topic=obj.get("previous_topic"),
+                        current_topic=obj.get("current_topic"),
+                        topic_changed=obj.get("topic_changed"),
+                        nudge_injected=obj.get("nudge_injected"),
+                        suppression_reason=obj.get("suppression_reason"),
+                    )
+                )
 
     record = ConversationRecord(
         id=meta.get("conversation_id", ""),
@@ -1879,7 +1940,7 @@ def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
     with open(raw_path, "w", encoding="utf-8") as f:
         json.dump(raw_messages, f, ensure_ascii=False, indent=2)
 
-    console.print(f"\n[bold]Files saved:[/bold]")
+    console.print("\n[bold]Files saved:[/bold]")
     console.print(f"  📄 {jsonl_path}")
     console.print(f"  📖 {md_path}")
     console.print(f"  🔧 {raw_path}")

@@ -22,10 +22,10 @@ from src.prompts import (
     set_tool_call_counter,
 )
 
-
 # ---------------------------------------------------------------------------
 # generate_seed
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateSeed:
     def test_returns_requested_count(self):
@@ -47,6 +47,7 @@ class TestGenerateSeed:
 # ---------------------------------------------------------------------------
 # build_ai_system_prompt
 # ---------------------------------------------------------------------------
+
 
 class TestBuildAISystemPrompt:
     def test_contains_independence_language(self):
@@ -75,6 +76,7 @@ class TestBuildAISystemPrompt:
 # ---------------------------------------------------------------------------
 # get_human_profile / build_human_system_prompt
 # ---------------------------------------------------------------------------
+
 
 class TestHumanProfiles:
     def test_get_by_index(self):
@@ -115,6 +117,7 @@ class TestHumanProfiles:
 # Tool-call counter helpers
 # ---------------------------------------------------------------------------
 
+
 class TestToolCallCounter:
     def test_reset_and_increment(self):
         reset_tool_call_counter()
@@ -151,6 +154,7 @@ class TestToolCallCounter:
 # extract_tool_call_text
 # ---------------------------------------------------------------------------
 
+
 class TestExtractToolCallText:
     def _make_response(self, tool_calls=None, content=None):
         return SimpleNamespace(tool_calls=tool_calls, content=content)
@@ -160,55 +164,65 @@ class TestExtractToolCallText:
         assert extract_tool_call_text(r) == (None, None, None)
 
     def test_valid_write_message(self):
-        tc = [{
-            "id": "tc_1",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": json.dumps({"text": "hello"}),
-            },
-        }]
+        tc = [
+            {
+                "id": "tc_1",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps({"text": "hello"}),
+                },
+            }
+        ]
         text, tc_id, reasoning = extract_tool_call_text(self._make_response(tool_calls=tc))
         assert text == "hello"
         assert tc_id == "tc_1"
         assert reasoning is None
 
     def test_with_reasoning_in_args(self):
-        tc = [{
-            "id": "tc_2",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": json.dumps({"text": "hey", "reasoning": "thinking hard"}),
-            },
-        }]
+        tc = [
+            {
+                "id": "tc_2",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps({"text": "hey", "reasoning": "thinking hard"}),
+                },
+            }
+        ]
         text, tc_id, reasoning = extract_tool_call_text(self._make_response(tool_calls=tc))
         assert text == "hey"
         assert reasoning == "thinking hard"
 
     def test_malformed_json_args(self):
-        tc = [{
-            "id": "tc_3",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": "not json{{{",
-            },
-        }]
+        tc = [
+            {
+                "id": "tc_3",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": "not json{{{",
+                },
+            }
+        ]
         assert extract_tool_call_text(self._make_response(tool_calls=tc)) == (None, None, None)
 
     def test_stop_tool_ignored(self):
-        tc = [{
-            "id": "tc_4",
-            "function": {"name": "stop", "arguments": "{}"},
-        }]
+        tc = [
+            {
+                "id": "tc_4",
+                "function": {"name": "stop", "arguments": "{}"},
+            }
+        ]
         assert extract_tool_call_text(self._make_response(tool_calls=tc)) == (None, None, None)
 
     def test_message_fallback_key(self):
-        tc = [{
-            "id": "tc_5",
-            "function": {
-                "name": "write_message_to_human",
-                "arguments": json.dumps({"message": "alt key"}),
-            },
-        }]
+        tc = [
+            {
+                "id": "tc_5",
+                "function": {
+                    "name": "write_message_to_human",
+                    "arguments": json.dumps({"message": "alt key"}),
+                },
+            }
+        ]
         text, _, _ = extract_tool_call_text(self._make_response(tool_calls=tc))
         assert text == "alt key"
 
@@ -216,6 +230,7 @@ class TestExtractToolCallText:
 # ---------------------------------------------------------------------------
 # AI_TOOLS shape
 # ---------------------------------------------------------------------------
+
 
 class TestAIToolsShape:
     def test_two_tools_defined(self):

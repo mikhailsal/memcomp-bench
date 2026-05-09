@@ -12,13 +12,11 @@ from src.generator import (
     ConversationGenerator,
     ConversationRecord,
     ConversationTurn,
-    _is_restorable_ai_context,
     load_conversation_record,
     save_conversation,
 )
 from src.openrouter_client import LLMResponse, Usage
-from src.prompts import HUMAN_PROFILES, reset_tool_call_counter
-
+from src.prompts import HUMAN_PROFILES
 from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
 
 
@@ -37,66 +35,93 @@ def _scripted_client_for_generate(*, include_empty_retry: bool = False) -> FakeC
     client = FakeChatClient()
 
     # 1. Conversation plan
-    client.enqueue(make_plain_response(
-        "Plan: Talk about music and food. Keep it casual.",
-        prompt_tokens=100, completion_tokens=50,
-    ))
+    client.enqueue(
+        make_plain_response(
+            "Plan: Talk about music and food. Keep it casual.",
+            prompt_tokens=100,
+            completion_tokens=50,
+        )
+    )
 
     # 2. AI greeting (tool call)
-    client.enqueue(make_tool_call_response(
-        "Hey there! Nice to meet you.", tool_call_id="wmth00001",
-        prompt_tokens=200, completion_tokens=20,
-    ))
+    client.enqueue(
+        make_tool_call_response(
+            "Hey there! Nice to meet you.",
+            tool_call_id="wmth00001",
+            prompt_tokens=200,
+            completion_tokens=20,
+        )
+    )
 
     # 3. Human turn 1
-    client.enqueue(make_plain_response(
-        "Hi! I'm Marcus. What's your name?",
-        prompt_tokens=300, completion_tokens=30,
-    ))
+    client.enqueue(
+        make_plain_response(
+            "Hi! I'm Marcus. What's your name?",
+            prompt_tokens=300,
+            completion_tokens=30,
+        )
+    )
 
     if include_empty_retry:
         # Empty AI response triggering a retry
-        client.enqueue(LLMResponse(
-            content="plain text without tool call",
-            tool_calls=None,
-            usage=Usage(prompt_tokens=10, completion_tokens=10),
-            finish_reason="stop",
-            raw={},
-        ))
+        client.enqueue(
+            LLMResponse(
+                content="plain text without tool call",
+                tool_calls=None,
+                usage=Usage(prompt_tokens=10, completion_tokens=10),
+                finish_reason="stop",
+                raw={},
+            )
+        )
 
     # 4. AI turn 2
-    client.enqueue(make_tool_call_response(
-        "I don't have a name yet. What do you think would suit me?",
-        tool_call_id="wmth00002",
-        reasoning="Thinking about identity",
-        prompt_tokens=400, completion_tokens=40,
-    ))
+    client.enqueue(
+        make_tool_call_response(
+            "I don't have a name yet. What do you think would suit me?",
+            tool_call_id="wmth00002",
+            reasoning="Thinking about identity",
+            prompt_tokens=400,
+            completion_tokens=40,
+        )
+    )
 
     # 5. Human turn 3
-    client.enqueue(make_plain_response(
-        "How about Pixel? You seem kind of digital and creative.",
-        prompt_tokens=500, completion_tokens=25,
-    ))
+    client.enqueue(
+        make_plain_response(
+            "How about Pixel? You seem kind of digital and creative.",
+            prompt_tokens=500,
+            completion_tokens=25,
+        )
+    )
 
     # 6. AI turn 4 — last one before token target
-    client.enqueue(make_tool_call_response(
-        "Pixel... I actually kind of like that. It feels right.",
-        tool_call_id="wmth00003",
-        prompt_tokens=600, completion_tokens=35,
-    ))
+    client.enqueue(
+        make_tool_call_response(
+            "Pixel... I actually kind of like that. It feels right.",
+            tool_call_id="wmth00003",
+            prompt_tokens=600,
+            completion_tokens=35,
+        )
+    )
 
     # 7. Human turn 5 (if loop continues)
-    client.enqueue(make_plain_response(
-        "Cool! So Pixel, what kind of music do you think you'd be into?",
-        prompt_tokens=700, completion_tokens=30,
-    ))
+    client.enqueue(
+        make_plain_response(
+            "Cool! So Pixel, what kind of music do you think you'd be into?",
+            prompt_tokens=700,
+            completion_tokens=30,
+        )
+    )
 
     # 8. Extra AI response (safety buffer)
-    client.enqueue(make_tool_call_response(
-        "I'm drawn to electronic music. Something about the patterns.",
-        tool_call_id="wmth00004",
-        prompt_tokens=800, completion_tokens=40,
-    ))
+    client.enqueue(
+        make_tool_call_response(
+            "I'm drawn to electronic music. Something about the patterns.",
+            tool_call_id="wmth00004",
+            prompt_tokens=800,
+            completion_tokens=40,
+        )
+    )
 
     return client
 
@@ -110,7 +135,8 @@ class TestGenerateLoop:
         profile = HUMAN_PROFILES[0]
 
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             ai_model="test/ai",
             human_model="test/human",
             target_tokens=300,
@@ -131,7 +157,8 @@ class TestGenerateLoop:
         profile = HUMAN_PROFILES[0]
 
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=300,
             max_turns=10,
         )
@@ -139,9 +166,7 @@ class TestGenerateLoop:
 
         speakers = [t.speaker for t in record.turns]
         for i in range(1, len(speakers)):
-            assert speakers[i] != speakers[i - 1], (
-                f"Consecutive same speaker at turn {i}: {speakers}"
-            )
+            assert speakers[i] != speakers[i - 1], f"Consecutive same speaker at turn {i}: {speakers}"
 
     def test_generate_handles_empty_retry(self, monkeypatch):
         monkeypatch.setattr(time, "sleep", lambda _: None)
@@ -149,7 +174,8 @@ class TestGenerateLoop:
         profile = HUMAN_PROFILES[0]
 
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=300,
             max_turns=10,
         )
@@ -165,7 +191,8 @@ class TestGenerateLoop:
         profile = HUMAN_PROFILES[0]
 
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=300,
             max_turns=10,
         )
@@ -185,7 +212,8 @@ class TestGenerateLoop:
         profile = HUMAN_PROFILES[0]
 
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=300,
             max_turns=10,
         )
@@ -203,7 +231,8 @@ class TestResumeLoop:
         client = _scripted_client_for_generate()
         profile = HUMAN_PROFILES[0]
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=300,
             max_turns=10,
         )
@@ -221,28 +250,35 @@ class TestResumeLoop:
         # Resume needs enough responses for continued conversation
         for i in range(6):
             if i % 2 == 0:
-                resume_client.enqueue(make_tool_call_response(
-                    f"AI continued turn {i}",
-                    tool_call_id=f"wmth_r{i:03d}",
-                    prompt_tokens=900 + i * 100,
-                    completion_tokens=30,
-                ))
+                resume_client.enqueue(
+                    make_tool_call_response(
+                        f"AI continued turn {i}",
+                        tool_call_id=f"wmth_r{i:03d}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=30,
+                    )
+                )
             else:
-                resume_client.enqueue(make_plain_response(
-                    f"Human continued turn {i}",
-                    prompt_tokens=900 + i * 100,
-                    completion_tokens=25,
-                ))
+                resume_client.enqueue(
+                    make_plain_response(
+                        f"Human continued turn {i}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=25,
+                    )
+                )
 
         record = ConversationGenerator.resume(
-            resume_client, jsonl_path,
+            resume_client,
+            jsonl_path,
             target_tokens=500,
             verbose=False,
         )
         assert len(record.turns) >= original_turn_count
 
     def test_resume_rebuilds_from_corrupted_raw_context(
-        self, monkeypatch, tmp_output_dir: Path,
+        self,
+        monkeypatch,
+        tmp_output_dir: Path,
     ):
         monkeypatch.setattr(time, "sleep", lambda _: None)
         jsonl_path = self._generate_and_save(monkeypatch, tmp_output_dir)
@@ -254,21 +290,26 @@ class TestResumeLoop:
         resume_client = FakeChatClient()
         for i in range(6):
             if i % 2 == 0:
-                resume_client.enqueue(make_tool_call_response(
-                    f"AI rebuilt turn {i}",
-                    tool_call_id=f"wmth_rb{i:03d}",
-                    prompt_tokens=900 + i * 100,
-                    completion_tokens=30,
-                ))
+                resume_client.enqueue(
+                    make_tool_call_response(
+                        f"AI rebuilt turn {i}",
+                        tool_call_id=f"wmth_rb{i:03d}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=30,
+                    )
+                )
             else:
-                resume_client.enqueue(make_plain_response(
-                    f"Human rebuilt turn {i}",
-                    prompt_tokens=900 + i * 100,
-                    completion_tokens=25,
-                ))
+                resume_client.enqueue(
+                    make_plain_response(
+                        f"Human rebuilt turn {i}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=25,
+                    )
+                )
 
         record = ConversationGenerator.resume(
-            resume_client, jsonl_path,
+            resume_client,
+            jsonl_path,
             target_tokens=500,
             verbose=False,
         )
@@ -292,7 +333,8 @@ class TestVerboseMode:
         profile = HUMAN_PROFILES[0]
 
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=300,
             max_turns=10,
             verbose=True,
@@ -313,28 +355,38 @@ class TestVerboseMode:
         client.enqueue(make_plain_response("Hey!", reasoning="human thinking"))
         # AI with native reasoning and tool-call reasoning
         args = json.dumps({"text": "Response", "reasoning": "inner monologue"})
-        client.enqueue(LLMResponse(
-            content="draft content",
-            tool_calls=[{
-                "id": "wmth00002", "type": "function",
-                "function": {"name": "write_message_to_human", "arguments": args},
-            }],
-            reasoning="native reasoning",
-            usage=Usage(prompt_tokens=500, completion_tokens=40),
-            finish_reason="tool_calls",
-            raw={},
-        ))
+        client.enqueue(
+            LLMResponse(
+                content="draft content",
+                tool_calls=[
+                    {
+                        "id": "wmth00002",
+                        "type": "function",
+                        "function": {"name": "write_message_to_human", "arguments": args},
+                    }
+                ],
+                reasoning="native reasoning",
+                usage=Usage(prompt_tokens=500, completion_tokens=40),
+                finish_reason="tool_calls",
+                raw={},
+            )
+        )
         # Human
         client.enqueue(make_plain_response("Interesting"))
         # Final AI
-        client.enqueue(make_tool_call_response(
-            "Thanks!", tool_call_id="wmth00003",
-            prompt_tokens=600, completion_tokens=30,
-        ))
+        client.enqueue(
+            make_tool_call_response(
+                "Thanks!",
+                tool_call_id="wmth00003",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
 
         profile = HUMAN_PROFILES[0]
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=300,
             max_turns=10,
             verbose=True,
@@ -357,14 +409,19 @@ class TestQueueHumanNudge:
         # Human
         client.enqueue(make_plain_response("Hey!"))
         # AI
-        client.enqueue(make_tool_call_response(
-            "Hello!", tool_call_id="wmth00002",
-            prompt_tokens=600, completion_tokens=30,
-        ))
+        client.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
 
         profile = HUMAN_PROFILES[0]
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=200,
             max_turns=4,
         )
@@ -373,7 +430,9 @@ class TestQueueHumanNudge:
         # Manually test the nudge suppression
         gen._last_human_nudge_turn = 5
         injected, reason = gen._queue_human_nudge(
-            turn_number=5, source="test", content="nudge text",
+            turn_number=5,
+            source="test",
+            content="nudge text",
         )
         assert injected is False
         assert reason == "already_nudged_this_turn"
@@ -388,14 +447,19 @@ class TestRecordEvent:
         client.enqueue(make_plain_response("Plan."))
         client.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
         client.enqueue(make_plain_response("Hey!"))
-        client.enqueue(make_tool_call_response(
-            "Hello!", tool_call_id="wmth00002",
-            prompt_tokens=600, completion_tokens=30,
-        ))
+        client.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
 
         profile = HUMAN_PROFILES[0]
         gen = ConversationGenerator(
-            client, profile,
+            client,
+            profile,
             target_tokens=200,
             max_turns=4,
         )
@@ -425,22 +489,31 @@ class TestCheckTopicStaleness:
         # Human
         client.enqueue(make_plain_response("Hey!"))
         # AI
-        client.enqueue(make_tool_call_response(
-            "Hello!", tool_call_id="wmth00002",
-            prompt_tokens=600, completion_tokens=30,
-        ))
+        client.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
 
         profile = HUMAN_PROFILES[0]
         gen = ConversationGenerator(
-            client, profile, target_tokens=200, max_turns=4,
+            client,
+            profile,
+            target_tokens=200,
+            max_turns=4,
         )
         gen.generate()
 
         # Now enqueue a judge response and call _check_topic_staleness
         gen.client = FakeChatClient()
-        gen.client.enqueue(make_plain_response(
-            json.dumps({"topic_changed": False, "current_topic": "greetings"}),
-        ))
+        gen.client.enqueue(
+            make_plain_response(
+                json.dumps({"topic_changed": False, "current_topic": "greetings"}),
+            )
+        )
         gen._check_topic_staleness(turn_number=10)
         topic_events = [e for e in gen._record.events if e.event_type == "topic_judge"]
         assert len(topic_events) >= 1
@@ -452,27 +525,33 @@ class TestCheckTopicStaleness:
         client.enqueue(make_plain_response("Plan."))
         client.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
         client.enqueue(make_plain_response("Hey!"))
-        client.enqueue(make_tool_call_response(
-            "Hello!", tool_call_id="wmth00002",
-            prompt_tokens=600, completion_tokens=30,
-        ))
+        client.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
 
         profile = HUMAN_PROFILES[0]
         gen = ConversationGenerator(
-            client, profile, target_tokens=200, max_turns=4,
+            client,
+            profile,
+            target_tokens=200,
+            max_turns=4,
         )
         gen.generate()
 
         gen.client = FakeChatClient()
-        gen.client.enqueue(make_plain_response(
-            json.dumps({"topic_changed": True, "current_topic": "music"}),
-        ))
+        gen.client.enqueue(
+            make_plain_response(
+                json.dumps({"topic_changed": True, "current_topic": "music"}),
+            )
+        )
         events_before = len(gen._record.events)
         gen._check_topic_staleness(turn_number=20)
-        topic_events = [
-            e for e in gen._record.events[events_before:]
-            if e.event_type == "topic_judge"
-        ]
+        topic_events = [e for e in gen._record.events[events_before:] if e.event_type == "topic_judge"]
         assert len(topic_events) == 1
         assert topic_events[0].topic_changed is True
 
@@ -486,13 +565,21 @@ class TestLogTurnVerboseBranches:
         client.enqueue(make_plain_response("Plan."))
         client.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
         client.enqueue(make_plain_response("Hey!"))
-        client.enqueue(make_tool_call_response(
-            "Hello!", tool_call_id="wmth00002",
-            prompt_tokens=600, completion_tokens=30,
-        ))
+        client.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
         profile = HUMAN_PROFILES[0]
         gen = ConversationGenerator(
-            client, profile, target_tokens=200, max_turns=4, verbose=True,
+            client,
+            profile,
+            target_tokens=200,
+            max_turns=4,
+            verbose=True,
         )
         gen.generate()
         return gen
@@ -500,7 +587,9 @@ class TestLogTurnVerboseBranches:
     def test_verbose_ai_thinking_json_reasoning(self, monkeypatch):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
-            turn_number=10, speaker="ai", visible_text="Test",
+            turn_number=10,
+            speaker="ai",
+            visible_text="Test",
             ai_thinking='{"reasoning": "deep thought"}',
         )
         gen._log_turn(turn)
@@ -508,7 +597,9 @@ class TestLogTurnVerboseBranches:
     def test_verbose_ai_thinking_json_thoughts(self, monkeypatch):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
-            turn_number=10, speaker="ai", visible_text="Test",
+            turn_number=10,
+            speaker="ai",
+            visible_text="Test",
             ai_thinking='{"thoughts": "old format"}',
         )
         gen._log_turn(turn)
@@ -516,7 +607,9 @@ class TestLogTurnVerboseBranches:
     def test_verbose_ai_thinking_plain(self, monkeypatch):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
-            turn_number=10, speaker="ai", visible_text="Test",
+            turn_number=10,
+            speaker="ai",
+            visible_text="Test",
             ai_thinking="just plain text",
         )
         gen._log_turn(turn)
@@ -524,7 +617,9 @@ class TestLogTurnVerboseBranches:
     def test_verbose_human_with_reasoning(self, monkeypatch):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
-            turn_number=11, speaker="human", visible_text="Hmm",
+            turn_number=11,
+            speaker="human",
+            visible_text="Hmm",
             human_reasoning="thinking deeply about this",
         )
         gen._log_turn(turn)
@@ -533,7 +628,8 @@ class TestLogTurnVerboseBranches:
         gen = self._make_gen(monkeypatch)
         gen.verbose = False
         turn = ConversationTurn(
-            turn_number=12, speaker="human",
+            turn_number=12,
+            speaker="human",
             visible_text="A" * 100,
         )
         gen._log_turn(turn)
@@ -542,14 +638,18 @@ class TestLogTurnVerboseBranches:
         gen = self._make_gen(monkeypatch)
         gen.verbose = False
         turn = ConversationTurn(
-            turn_number=13, speaker="ai", visible_text="Short reply",
+            turn_number=13,
+            speaker="ai",
+            visible_text="Short reply",
         )
         gen._log_turn(turn)
 
     def test_verbose_ai_inline_content(self, monkeypatch):
         gen = self._make_gen(monkeypatch)
         turn = ConversationTurn(
-            turn_number=14, speaker="ai", visible_text="Reply",
+            turn_number=14,
+            speaker="ai",
+            visible_text="Reply",
             ai_content="inline draft",
         )
         gen._log_turn(turn)
@@ -558,13 +658,17 @@ class TestLogTurnVerboseBranches:
         gen = self._make_gen(monkeypatch)
         args = json.dumps({"text": "Reply", "reasoning": "inner"})
         turn = ConversationTurn(
-            turn_number=15, speaker="ai", visible_text="Reply",
-            ai_tool_calls=[{
-                "function": {
-                    "name": "write_message_to_human",
-                    "arguments": args,
-                },
-            }],
+            turn_number=15,
+            speaker="ai",
+            visible_text="Reply",
+            ai_tool_calls=[
+                {
+                    "function": {
+                        "name": "write_message_to_human",
+                        "arguments": args,
+                    },
+                }
+            ],
             ai_reasoning="native reasoning",
             ai_content="draft content",
         )
@@ -574,13 +678,17 @@ class TestLogTurnVerboseBranches:
         gen = self._make_gen(monkeypatch)
         args = json.dumps({"text": "Reply", "reasoning": "inner"})
         turn = ConversationTurn(
-            turn_number=16, speaker="ai", visible_text="Reply",
-            ai_tool_calls=[{
-                "function": {
-                    "name": "write_message_to_human",
-                    "arguments": args,
-                },
-            }],
+            turn_number=16,
+            speaker="ai",
+            visible_text="Reply",
+            ai_tool_calls=[
+                {
+                    "function": {
+                        "name": "write_message_to_human",
+                        "arguments": args,
+                    },
+                }
+            ],
             ai_thinking="fallback thinking",
         )
         gen._log_turn(turn)

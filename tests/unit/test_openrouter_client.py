@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from memcomp_bench.openrouter_client import OpenRouterClient
+from memcomp_bench.prompts import AI_TOOLS
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -121,6 +122,21 @@ class TestHappyPath:
         assert body["tool_choice"]["function"]["name"] == "fn"
         assert body["provider"] == {"only": ["prov"]}
         assert body["reasoning"] == {"effort": "minimal"}
+        client.close()
+
+    def test_payload_preserves_write_message_schema_contract(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json=_ok_response())
+
+        client = _make_client(handler)
+        client.chat(model="m", messages=[], tools=AI_TOOLS)
+        body = json.loads(captured[0].content)
+        params = body["tools"][0]["function"]["parameters"]
+        assert list(params["properties"]) == ["reasoning", "text"]
+        assert params["required"] == ["reasoning", "text"]
         client.close()
 
 

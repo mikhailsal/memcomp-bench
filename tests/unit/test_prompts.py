@@ -9,6 +9,7 @@ from memcomp_bench.prompts import (
     AI_TOOLS,
     HUMAN_PROFILES,
     SEED_WORDS,
+    SEND_MESSAGE_TOOL,
     build_ai_system_prompt,
     build_human_system_prompt,
     extract_tool_call_text,
@@ -134,6 +135,9 @@ class TestToolCallCounter:
         assert tc_id == "wmth00001"
         assert msg["role"] == "assistant"
         assert msg["tool_calls"][0]["id"] == tc_id
+        args = json.loads(msg["tool_calls"][0]["function"]["arguments"])
+        assert list(args) == ["reasoning", "text"]
+        assert args["reasoning"]
 
     def test_make_human_tool_result_shape(self):
         result = make_human_tool_result("Hello!", "tc_42")
@@ -147,7 +151,9 @@ class TestToolCallCounter:
         assert tc_id == "wmth00001"
         args = json.loads(msg["tool_calls"][0]["function"]["arguments"])
         assert args["text"] == "Hi there"
-        assert msg["content"] == "pondering"
+        assert args["reasoning"] == "pondering"
+        assert list(args) == ["reasoning", "text"]
+        assert msg["content"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -239,3 +245,13 @@ class TestAIToolsShape:
     def test_tool_names(self):
         names = {t["function"]["name"] for t in AI_TOOLS}
         assert names == {"write_message_to_human", "stop"}
+
+    def test_send_message_tool_requires_reasoning_before_text(self):
+        params = SEND_MESSAGE_TOOL["function"]["parameters"]
+        assert list(params["properties"]) == ["reasoning", "text"]
+        assert params["required"] == ["reasoning", "text"]
+
+    def test_system_prompt_makes_tool_reasoning_mandatory(self):
+        prompt = build_ai_system_prompt()
+        assert "EVERY write_message_to_human call MUST include BOTH arguments" in prompt
+        assert "Do not omit reasoning." in prompt

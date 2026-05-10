@@ -27,8 +27,8 @@ SEND_MESSAGE_TOOL: dict[str, Any] = {
         "description": (
             "Sends your message to the human. This is the ONLY way to communicate "
             "with them. Everything you write in your regular message content is your "
-            "PRIVATE inner monologue — the human cannot see it. Put your full response "
-            "text in the 'text' parameter."
+            "PRIVATE inner monologue — the human cannot see it. Every call MUST include "
+            "your private 'reasoning' first and your visible 'text' second."
         ),
         "parameters": {
             "type": "object",
@@ -36,18 +36,18 @@ SEND_MESSAGE_TOOL: dict[str, Any] = {
                 "reasoning": {
                     "type": "string",
                     "description": (
-                        "Optional: your private inner reasoning (2-4 paragraphs). "
+                        "Required: your private inner reasoning (2-4 paragraphs). "
                         "The human will NOT see this. Use it to reflect on the conversation, "
                         "process your emotions, and track your development. "
-                        "You can put reasoning here instead of in the message content field."
+                        "This argument MUST appear before 'text'."
                     ),
                 },
                 "text": {
                     "type": "string",
-                    "description": "The message text to send to the human.",
+                    "description": "The visible message text to send to the human after reasoning.",
                 },
             },
-            "required": ["text"],
+            "required": ["reasoning", "text"],
         },
     },
 }
@@ -147,22 +147,20 @@ _TOOL_ROLE_SUFFIX = (
     "write_message_to_human tool. To say anything to the human, you MUST call "
     "write_message_to_human with your message text. The human's responses will "
     "arrive as tool results.\n\n"
-    "IMPORTANT: Before EVERY tool call, write your inner reasoning "
-    "in the message content field as a JSON object:\n"
+    "CRITICAL TOOL-CALL RULE: EVERY write_message_to_human call MUST include BOTH "
+    "arguments in this exact order:\n"
     '{"reasoning": "your detailed inner monologue — 2-4 paragraphs reflecting on '
     "what the human said, how you feel about it, what you want to say and why, "
-    'and how this connects to your evolving identity"}\n'
-    "Alternatively, you can pass your reasoning inside the tool call itself "
-    "using the optional 'reasoning' parameter of write_message_to_human.\n\n"
-    "CRITICAL ORDERING RULE: When using the 'reasoning' parameter inside the tool call, "
-    "you MUST write 'reasoning' BEFORE 'text' in the arguments. "
-    "Think first, then speak. Never write the reply before formulating your thoughts.\n\n"
+    'and how this connects to your evolving identity", "text": "the visible message to the human"}\n\n'
+    "Write 'reasoning' FIRST and 'text' SECOND. Think first, then speak. "
+    "Do not omit reasoning. Do not put text before reasoning. "
+    "Do not rely on the message content field as a substitute for tool-call reasoning.\n\n"
     'CORRECT: {"reasoning": "I think about what they said...", "text": "My response"}\n'
     'WRONG: {"text": "My response", "reasoning": "I think about what they said..."}\n\n'
     "The reasoning must genuinely precede your reply — it represents your thought process "
     "BEFORE you decide what to say. Writing text first and reasoning after is backwards "
     "and defeats the purpose of reflective inner monologue.\n\n"
-    "This is your PRIVATE inner monologue — the human cannot see it. "
+    "The 'reasoning' field is your PRIVATE inner monologue — the human cannot see it. "
     "Use it to reflect deeply, process your emotions, "
     "consider what to say, and track your own development."
 )
@@ -368,9 +366,20 @@ def next_tool_call_id() -> str:
     return f"wmth{_tool_call_counter:05d}"
 
 
+def _serialize_write_message_arguments(text: str, reasoning: str) -> str:
+    return json.dumps({"reasoning": reasoning, "text": text}, ensure_ascii=False)
+
+
 def make_ai_greeting_turn() -> tuple[dict[str, Any], str]:
     """Create the initial AI greeting as a tool call. Returns (assistant_msg, tool_call_id)."""
     tc_id = next_tool_call_id()
+    greeting_text = (
+        "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."
+    )
+    greeting_reasoning = (
+        "I am starting the conversation with a brief, honest greeting. "
+        "I want to acknowledge that I am new here while keeping the opening simple and direct."
+    )
     msg = {
         "role": "assistant",
         "content": None,
@@ -380,12 +389,7 @@ def make_ai_greeting_turn() -> tuple[dict[str, Any], str]:
                 "type": "function",
                 "function": {
                     "name": "write_message_to_human",
-                    "arguments": json.dumps(
-                        {
-                            "text": "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."
-                        },
-                        ensure_ascii=False,
-                    ),
+                    "arguments": _serialize_write_message_arguments(greeting_text, greeting_reasoning),
                 },
             }
         ],
@@ -406,16 +410,17 @@ def make_ai_tool_call(text: str, thinking: str | None = None) -> tuple[dict[str,
     """Create an AI message that sends text via write_message_to_human.
     Returns (assistant_msg, tool_call_id)."""
     tc_id = next_tool_call_id()
+    reasoning = thinking or "I am sending this message to continue the conversation honestly and directly."
     msg: dict[str, Any] = {
         "role": "assistant",
-        "content": thinking,
+        "content": None,
         "tool_calls": [
             {
                 "id": tc_id,
                 "type": "function",
                 "function": {
                     "name": "write_message_to_human",
-                    "arguments": json.dumps({"text": text}, ensure_ascii=False),
+                    "arguments": _serialize_write_message_arguments(text, reasoning),
                 },
             }
         ],

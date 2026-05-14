@@ -71,6 +71,12 @@ def _make_record(
         conversation_plan="Talk about stuff",
         language="english",
         companion_mode="honest",
+        ai_provider={"only": ["ai-prov"], "allow_fallbacks": False},
+        ai_reasoning={"effort": "minimal"},
+        ai_rpm_limit=12,
+        human_provider={"only": ["human-prov"], "allow_fallbacks": False},
+        human_reasoning={"effort": "low"},
+        human_rpm_limit=8,
     )
     record.turns = used_turns
     record.events = events or []
@@ -104,6 +110,9 @@ class TestSaveConversation:
         assert meta["type"] == "metadata"
         assert meta["ai_model"] == "test/model-a"
         assert meta["conversation_id"] == "20260101_000000"
+        assert meta["ai_rpm_limit"] == 12
+        assert meta["human_rpm_limit"] == 8
+        assert meta["human_provider"] == {"only": ["human-prov"], "allow_fallbacks": False}
 
     def test_jsonl_contains_all_turns(self, tmp_output_dir: Path):
         record = _make_record()
@@ -153,6 +162,9 @@ class TestLoadConversationRecord:
         assert loaded.id == original.id
         assert loaded.ai_model == original.ai_model
         assert loaded.language == original.language
+        assert loaded.ai_rpm_limit == 12
+        assert loaded.human_rpm_limit == 8
+        assert loaded.human_provider == {"only": ["human-prov"], "allow_fallbacks": False}
         assert len(loaded.turns) == len(original.turns)
         assert loaded.turns[0].speaker == "human"
         assert loaded.turns[1].speaker == "ai"

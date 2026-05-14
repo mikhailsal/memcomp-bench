@@ -253,6 +253,8 @@ def _make_generate_args(**overrides):
         human_temperature=None,
         ai_max_tokens=None,
         human_max_tokens=None,
+        ai_rpm_limit=None,
+        human_rpm_limit=None,
     )
     defaults.update(overrides)
     return Namespace(**defaults)
@@ -305,6 +307,8 @@ def _make_resume_record():
         ai_model="test/ai",
         human_model="test/human",
         seed_words=["ocean", "ember"],
+        ai_rpm_limit=7,
+        human_rpm_limit=5,
     )
     tc = {
         "id": "wmth00001",
@@ -360,6 +364,8 @@ def _make_resume_args(jsonl_path, **overrides):
         human_temperature=None,
         ai_max_tokens=None,
         human_max_tokens=None,
+        ai_rpm_limit=None,
+        human_rpm_limit=None,
         verbose=False,
     )
     defaults.update(overrides)
@@ -390,3 +396,24 @@ class TestCmdResumeIntegration:
         cmd_resume(_make_resume_args(jsonl_path))
 
         assert len(fake.call_log) > 0
+
+    def test_cmd_generate_passes_rpm_limits(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(time, "sleep", lambda _: None)
+        output_dir = tmp_path / "output"
+        monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", output_dir)
+        monkeypatch.setattr("memcomp_bench.config.ENV_PATH", tmp_path / ".env")
+        monkeypatch.setenv("OPENROUTER_KEY", "test-key-for-generate")
+
+        fake = _make_generate_client()
+        monkeypatch.setattr("memcomp_bench.cli.OpenRouterClient", lambda key: fake)
+
+        from memcomp_bench.cli import cmd_generate
+
+        cmd_generate(_make_generate_args(ai_rpm_limit=9, human_rpm_limit=4))
+
+        ai_calls = [call for call in fake.call_log if call.get("request_role") == "ai"]
+        human_calls = [call for call in fake.call_log if call.get("request_role") == "human"]
+        assert ai_calls
+        assert human_calls
+        assert all(call.get("rpm_limit") == 9 for call in ai_calls)
+        assert all(call.get("rpm_limit") == 4 for call in human_calls)

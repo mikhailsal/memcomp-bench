@@ -53,6 +53,8 @@ def _do_resume(
     human_temperature_override: float | None = None,
     ai_max_tokens_override: int | None = None,
     human_max_tokens_override: int | None = None,
+    ai_rpm_limit_override: int | None = None,
+    human_rpm_limit_override: int | None = None,
 ) -> ConversationRecord:
     """Implementation of ConversationGenerator.resume()."""
     from memcomp_bench.generator import _UNSET
@@ -70,6 +72,8 @@ def _do_resume(
         human_temperature_override=human_temperature_override,
         ai_max_tokens_override=ai_max_tokens_override,
         human_max_tokens_override=human_max_tokens_override,
+        ai_rpm_limit_override=ai_rpm_limit_override,
+        human_rpm_limit_override=human_rpm_limit_override,
         _UNSET=_UNSET,
         language_override=language_override,
     )
@@ -140,6 +144,8 @@ def _extract_resume_config(
     human_temperature_override: float | None,
     ai_max_tokens_override: int | None,
     human_max_tokens_override: int | None,
+    ai_rpm_limit_override: int | None,
+    human_rpm_limit_override: int | None,
     _UNSET: object,
     language_override: str | None,
 ) -> dict:
@@ -147,18 +153,14 @@ def _extract_resume_config(
     saved_ai_provider = metadata.get("ai_provider", AI_PROVIDER)
     saved_human_provider = metadata.get("human_provider", HUMAN_PROVIDER)
 
-    ai_temperature = metadata.get("ai_temperature", AI_TEMPERATURE)
-    if ai_temperature_override is not None:
-        ai_temperature = ai_temperature_override
-    ai_max_tokens = metadata.get("ai_max_tokens", AI_MAX_TOKENS)
-    if ai_max_tokens_override is not None:
-        ai_max_tokens = ai_max_tokens_override
-    human_temperature = metadata.get("human_temperature", HUMAN_TEMPERATURE)
-    if human_temperature_override is not None:
-        human_temperature = human_temperature_override
-    human_max_tokens = metadata.get("human_max_tokens", HUMAN_MAX_TOKENS)
-    if human_max_tokens_override is not None:
-        human_max_tokens = human_max_tokens_override
+    ai_temperature = _resolve_resume_value(metadata, "ai_temperature", AI_TEMPERATURE, ai_temperature_override)
+    ai_max_tokens = _resolve_resume_value(metadata, "ai_max_tokens", AI_MAX_TOKENS, ai_max_tokens_override)
+    human_temperature = _resolve_resume_value(
+        metadata, "human_temperature", HUMAN_TEMPERATURE, human_temperature_override
+    )
+    human_max_tokens = _resolve_resume_value(metadata, "human_max_tokens", HUMAN_MAX_TOKENS, human_max_tokens_override)
+    ai_rpm_limit = _resolve_resume_value(metadata, "ai_rpm_limit", None, ai_rpm_limit_override)
+    human_rpm_limit = _resolve_resume_value(metadata, "human_rpm_limit", None, human_rpm_limit_override)
 
     return {
         "profile": metadata["human_profile"],
@@ -176,6 +178,8 @@ def _extract_resume_config(
         "human_temperature": human_temperature,
         "ai_max_tokens": ai_max_tokens,
         "human_max_tokens": human_max_tokens,
+        "ai_rpm_limit": ai_rpm_limit,
+        "human_rpm_limit": human_rpm_limit,
         "previous_cost": metadata.get("total_cost_usd", 0.0),
         "ai_model_override": ai_model_override,
         "human_model_override": human_model_override,
@@ -185,7 +189,15 @@ def _extract_resume_config(
         "human_temperature_override": human_temperature_override,
         "ai_max_tokens_override": ai_max_tokens_override,
         "human_max_tokens_override": human_max_tokens_override,
+        "ai_rpm_limit_override": ai_rpm_limit_override,
+        "human_rpm_limit_override": human_rpm_limit_override,
     }
+
+
+def _resolve_resume_value(metadata: dict, key: str, default: Any, override: Any) -> Any:
+    """Return the saved config value unless an explicit override was provided."""
+    value = metadata.get(key, default)
+    return value if override is None else override
 
 
 def _restore_ai_context(jsonl_path: Path, turns: list, cfg: dict) -> list[dict[str, Any]]:
@@ -268,10 +280,12 @@ def _build_resumed_generator(
         ai_reasoning=cfg["ai_reasoning"],
         ai_temperature=cfg["ai_temperature"],
         ai_max_tokens=cfg["ai_max_tokens"],
+        ai_rpm_limit=cfg["ai_rpm_limit"],
         human_provider=cfg["human_provider"],
         human_reasoning=cfg["human_reasoning"],
         human_temperature=cfg["human_temperature"],
         human_max_tokens=cfg["human_max_tokens"],
+        human_rpm_limit=cfg["human_rpm_limit"],
     )
 
     client.total_cost = cfg["previous_cost"]
@@ -342,6 +356,11 @@ def _print_resume_header(
         _ov if cfg.get("human_max_tokens_override") is not None else ""
     )
     console.print(tok_line)
+    rpm_line = f"  AI RPM limit: {cfg['ai_rpm_limit']}" + (_ov if cfg.get("ai_rpm_limit_override") is not None else "")
+    rpm_line += f" / Human RPM limit: {cfg['human_rpm_limit']}" + (
+        _ov if cfg.get("human_rpm_limit_override") is not None else ""
+    )
+    console.print(rpm_line)
     console.print(f"  Previous cost: ${cfg['previous_cost']:.4f}")
     console.print(f"  New target: ~{target_tokens:,} tokens")
     console.print(f"  Seed: {', '.join(cfg['seed_words'])}")

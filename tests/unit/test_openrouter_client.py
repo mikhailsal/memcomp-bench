@@ -184,6 +184,70 @@ class TestRetry:
         client.close()
 
 
+class TestRequestRateLimits:
+    def test_waits_until_same_role_window_expires(self, monkeypatch):
+        now = {"value": 0.0}
+        sleeps: list[float] = []
+        call_times: list[float] = []
+
+        def fake_monotonic() -> float:
+            return now["value"]
+
+        def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+            now["value"] += seconds
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            call_times.append(now["value"])
+            return httpx.Response(200, json=_ok_response())
+
+        monkeypatch.setattr("memcomp_bench.openrouter_client.time.monotonic", fake_monotonic)
+        monkeypatch.setattr("memcomp_bench.openrouter_client.time.sleep", fake_sleep)
+
+        client = _make_client(handler)
+        client.chat(model="m", messages=[], request_role="ai", rpm_limit=2)
+        client.chat(model="m", messages=[], request_role="ai", rpm_limit=2)
+        client.chat(model="m", messages=[], request_role="ai", rpm_limit=2)
+
+        assert sleeps == [60.0]
+        assert call_times == [0.0, 0.0, 60.0]
+        client.close()
+
+    def test_ai_and_human_use_separate_windows(self, monkeypatch):
+        now = {"value": 0.0}
+        sleeps: list[float] = []
+        seen_roles: list[str] = []
+
+        def fake_monotonic() -> float:
+            return now["value"]
+
+        def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+            now["value"] += seconds
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            seen_roles.append(body["messages"][0]["content"])
+            return httpx.Response(200, json=_ok_response())
+
+        monkeypatch.setattr("memcomp_bench.openrouter_client.time.monotonic", fake_monotonic)
+        monkeypatch.setattr("memcomp_bench.openrouter_client.time.sleep", fake_sleep)
+
+        client = _make_client(handler)
+        client.chat(model="m", messages=[{"role": "user", "content": "ai-1"}], request_role="ai", rpm_limit=1)
+        client.chat(
+            model="m",
+            messages=[{"role": "user", "content": "human-1"}],
+            request_role="human",
+            rpm_limit=1,
+        )
+        client.chat(model="m", messages=[{"role": "user", "content": "ai-2"}], request_role="ai", rpm_limit=1)
+
+        assert seen_roles == ["ai-1", "human-1", "ai-2"]
+        assert sleeps == [60.0]
+        client.close()
+
+
 # ---------------------------------------------------------------------------
 # Network errors
 # ---------------------------------------------------------------------------

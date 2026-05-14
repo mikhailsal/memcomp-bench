@@ -35,10 +35,10 @@ install: ## Install package in editable mode with test + dev dependencies
 
 .PHONY: generate resume reformat profiles
 
-generate: ## Generate a conversation          (ARGS="--profile vitaly -v")
+generate: ## Generate a conversation          (ARGS="--profile vitaly --ai-rpm-limit 20 -v")
 	$(PYTHON) -m memcomp_bench.cli generate $(ARGS)
 
-resume: ## Resume an existing conversation   (ARGS="output/conv_xxx.jsonl")
+resume: ## Resume an existing conversation   (ARGS="output/conv_xxx.jsonl --human-rpm-limit 10")
 	$(PYTHON) -m memcomp_bench.cli resume $(ARGS)
 
 reformat: ## Reformat markdown for a conversation (ARGS="output/conv_xxx.jsonl")

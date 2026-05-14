@@ -95,10 +95,12 @@ class ConversationRecord:
     ai_reasoning: dict | None = None
     ai_temperature: float = AI_TEMPERATURE
     ai_max_tokens: int = AI_MAX_TOKENS
+    ai_rpm_limit: int | None = None
     human_provider: dict | None = None
     human_reasoning: dict | None = None
     human_temperature: float = HUMAN_TEMPERATURE
     human_max_tokens: int = HUMAN_MAX_TOKENS
+    human_rpm_limit: int | None = None
     turns: list[ConversationTurn] = field(default_factory=list)
     total_tokens_estimate: int = 0
     total_cost_usd: float = 0.0

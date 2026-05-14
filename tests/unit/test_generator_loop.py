@@ -316,6 +316,53 @@ class TestResumeLoop:
                 tmp_output_dir / "nonexistent.jsonl",
             )
 
+    def test_resume_inherits_saved_rpm_limits(self, monkeypatch, tmp_output_dir: Path):
+        monkeypatch.setattr(time, "sleep", lambda _: None)
+        client = _scripted_client_for_generate()
+        gen = ConversationGenerator(
+            client,
+            HUMAN_PROFILES[0],
+            target_tokens=300,
+            max_turns=10,
+            ai_rpm_limit=6,
+            human_rpm_limit=4,
+        )
+        jsonl_path = save_conversation(gen.generate(), tmp_output_dir)
+
+        resume_client = FakeChatClient()
+        for i in range(6):
+            if i % 2 == 0:
+                resume_client.enqueue(
+                    make_tool_call_response(
+                        f"AI resumed {i}",
+                        tool_call_id=f"wmth_rl{i:03d}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=30,
+                    )
+                )
+            else:
+                resume_client.enqueue(
+                    make_plain_response(
+                        f"Human resumed {i}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=25,
+                    )
+                )
+
+        ConversationGenerator.resume(
+            resume_client,
+            jsonl_path,
+            target_tokens=500,
+            verbose=False,
+        )
+
+        ai_calls = [call for call in resume_client.call_log if call.get("request_role") == "ai"]
+        human_calls = [call for call in resume_client.call_log if call.get("request_role") == "human"]
+        assert ai_calls
+        assert human_calls
+        assert all(call.get("rpm_limit") == 6 for call in ai_calls)
+        assert all(call.get("rpm_limit") == 4 for call in human_calls)
+
 
 class TestVerboseMode:
     """Exercise the verbose _log_turn branches."""

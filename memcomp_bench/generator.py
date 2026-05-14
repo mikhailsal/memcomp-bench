@@ -1,8 +1,4 @@
-"""Conversation generator: orchestrates turn-by-turn dialogue between two models.
-
-The AI companion uses tool-based communication (write_message_to_human) matching
-the MAI Companion protocol. The human simulator uses standard user/assistant format.
-"""
+"""Conversation generator for the benchmark dialogue loop."""
 
 from __future__ import annotations
 
@@ -32,7 +28,7 @@ from memcomp_bench.config import (
     MAX_TURNS,
     TARGET_TOKENS,
 )
-from memcomp_bench.generator_helpers import (
+from memcomp_bench.generator_helpers import (  # noqa: F401
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,
@@ -56,7 +52,7 @@ from memcomp_bench.generator_helpers import (
     _uses_native_reasoning_field,
 )
 from memcomp_bench.openrouter_client import OpenRouterClient, Usage  # noqa: F401
-from memcomp_bench.persistence import (
+from memcomp_bench.persistence import (  # noqa: F401
     _write_conversation_markdown,
     load_conversation_record,
     reformat_markdown,
@@ -73,46 +69,13 @@ from memcomp_bench.prompts import (
     make_human_tool_result,
 )
 
-__all__ = [
-    "ConversationEvent",
-    "ConversationGenerator",
-    "ConversationRecord",
-    "ConversationTurn",
-    "ParsedAIResponse",
-    "_UNSET",
-    "_build_ai_tool_message",
-    "_enforce_reasoning_before_text",
-    "_estimate_context_tokens",
-    "_response_has_text_before_reasoning",
-    "_estimate_tokens",
-    "_extract_tool_call_reasoning",
-    "_format_thinking_markdown",
-    "_heal_tool_call_names",
-    "_is_restorable_ai_context",
-    "_looks_like_json_object",
-    "_migrate_assistant_reasoning_fields",
-    "_normalize_tool_arguments",
-    "_rebuild_ai_context_from_turns",
-    "_split_thinking_and_message",
-    "_tool_call_text_before_reasoning",
-    "_turns_to_context_rows",
-    "_uses_native_reasoning_field",
-    "_write_conversation_markdown",
-    "load_conversation_record",
-    "reformat_markdown",
-    "save_conversation",
-]
-
 console = Console()
-
 _UNSET = object()
-
 _TOPIC_STALE_NOTE = (
     "[System note: The conversation has been on the same topic for a while. "
     "Time to shift gears — bring up something new from your life or interests. "
     "Check your conversation plan for topics you haven't covered yet.]"
 )
-
 _B3_REFRESH_NOTE = (
     "[System note: Something significant happened in your life recently — "
     "maybe a work event, a conversation with someone, something you saw or read, "
@@ -141,10 +104,12 @@ class ConversationGenerator:
         ai_reasoning: dict | None = AI_REASONING,
         ai_temperature: float = AI_TEMPERATURE,
         ai_max_tokens: int = AI_MAX_TOKENS,
+        ai_rpm_limit: int | None = None,
         human_provider: dict | None = HUMAN_PROVIDER,
         human_reasoning: dict | None = HUMAN_REASONING,
         human_temperature: float = HUMAN_TEMPERATURE,
         human_max_tokens: int = HUMAN_MAX_TOKENS,
+        human_rpm_limit: int | None = None,
     ) -> None:
         self.client = client
         self.human_profile = human_profile
@@ -159,10 +124,12 @@ class ConversationGenerator:
         self.ai_reasoning = ai_reasoning
         self.ai_temperature = ai_temperature
         self.ai_max_tokens = ai_max_tokens
+        self.ai_rpm_limit = ai_rpm_limit
         self.human_provider = human_provider
         self.human_reasoning = human_reasoning
         self.human_temperature = human_temperature
         self.human_max_tokens = human_max_tokens
+        self.human_rpm_limit = human_rpm_limit
 
         self._seed_words = generate_seed(5)
         self._ai_system_prompt = build_ai_system_prompt(self._seed_words, companion_mode=self.companion_mode)
@@ -193,10 +160,12 @@ class ConversationGenerator:
             ai_reasoning=self.ai_reasoning,
             ai_temperature=self.ai_temperature,
             ai_max_tokens=self.ai_max_tokens,
+            ai_rpm_limit=self.ai_rpm_limit,
             human_provider=self.human_provider,
             human_reasoning=self.human_reasoning,
             human_temperature=self.human_temperature,
             human_max_tokens=self.human_max_tokens,
+            human_rpm_limit=self.human_rpm_limit,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -306,6 +275,8 @@ class ConversationGenerator:
             tool_choice={"type": "function", "function": {"name": "write_message_to_human"}},
             provider=self.ai_provider,
             reasoning=self.ai_reasoning,
+            request_role="ai",
+            rpm_limit=self.ai_rpm_limit,
         )
         healed = _heal_tool_call_names(response.tool_calls)
         if healed:
@@ -352,6 +323,8 @@ class ConversationGenerator:
             temperature=self.human_temperature,
             provider=self.human_provider,
             reasoning=self.human_reasoning,
+            request_role="human",
+            rpm_limit=self.human_rpm_limit,
         )
         return response.content or "", response.reasoning, response.reasoning_details, response.usage
 
@@ -422,6 +395,8 @@ class ConversationGenerator:
             max_tokens=1500,
             temperature=0.95,
             provider=self.human_provider,
+            request_role="human",
+            rpm_limit=self.human_rpm_limit,
         )
         plan = response.content or ""
         console.print(f"  [dim]Plan generated ({_estimate_tokens(plan)} tokens)[/dim]")
@@ -472,6 +447,8 @@ class ConversationGenerator:
         human_temperature_override: float | None = None,
         ai_max_tokens_override: int | None = None,
         human_max_tokens_override: int | None = None,
+        ai_rpm_limit_override: int | None = None,
+        human_rpm_limit_override: int | None = None,
     ) -> ConversationRecord:
         """Resume a conversation from a saved JSONL file."""
         from memcomp_bench._resume import _do_resume
@@ -491,4 +468,6 @@ class ConversationGenerator:
             human_temperature_override=human_temperature_override,
             ai_max_tokens_override=ai_max_tokens_override,
             human_max_tokens_override=human_max_tokens_override,
+            ai_rpm_limit_override=ai_rpm_limit_override,
+            human_rpm_limit_override=human_rpm_limit_override,
         )

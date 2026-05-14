@@ -62,6 +62,11 @@ python -m memcomp_bench.cli generate \
   --ai-max-tokens 4096 \
   --human-max-tokens 1200
 
+# Limit requests per minute separately for the AI and human simulator
+python -m memcomp_bench.cli generate \
+  --ai-rpm-limit 20 \
+  --human-rpm-limit 10
+
 # Force a specific provider slug (OpenRouter provider routing)
 python -m memcomp_bench.cli generate --ai-provider minimax --human-provider x-ai
 ```
@@ -72,6 +77,10 @@ python -m memcomp_bench.cli generate --ai-provider minimax --human-provider x-ai
 python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl
 python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl \
   --target-tokens 150000 --ai-model "openai/gpt-4.1" -v
+
+# Saved AI/human RPM limits are restored automatically on resume unless overridden
+python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl \
+  --ai-rpm-limit 30 --human-rpm-limit 12
 ```
 
 **Reformat** the markdown file (useful after render logic updates):
@@ -94,7 +103,9 @@ All CLI commands have Makefile wrappers. Pass extra arguments through `ARGS`:
 make generate                                    # default profile, default settings
 make generate ARGS="--profile vitaly -v"         # verbose, Vitaly profile
 make generate ARGS="--profile alex --language hebrew --target-tokens 50000"
+make generate ARGS="--profile michael --ai-rpm-limit 20 --human-rpm-limit 10"
 make resume ARGS="output/conv_20260326_185127_marcus.jsonl --target-tokens 150000"
+make resume ARGS="output/conv_20260326_185127_marcus.jsonl --ai-rpm-limit 30"
 make reformat ARGS="output/conv_20260326_185127_marcus.jsonl"
 make profiles                                    # list all profiles
 ```
@@ -181,5 +192,9 @@ Key defaults from `config.py` (all overridable via CLI flags):
 | Human temperature | 0.9 |
 | AI max tokens / response | 2,048 |
 | Human max tokens / response | 800 |
+| AI RPM limit | unset |
+| Human RPM limit | unset |
 | AI reasoning | `{"effort": "minimal", "exclude": false, "enable": true}` |
 | Topic check interval | Every 40 turns |
+
+When set, RPM limits are stored in the conversation JSONL metadata and reused by `resume` unless you pass new override values.

@@ -29,6 +29,13 @@ from memcomp_bench.prompts import HUMAN_PROFILES, get_human_profile
 console = Console()
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def _resolve_profile(value: str) -> dict[str, str]:
     """Resolve a profile by name (case-insensitive) or numeric index."""
     # Try as number first
@@ -83,9 +90,11 @@ def cmd_generate(args: argparse.Namespace) -> None:
         ai_reasoning=AI_REASONING,
         ai_temperature=args.ai_temperature if args.ai_temperature is not None else AI_TEMPERATURE,
         ai_max_tokens=args.ai_max_tokens if args.ai_max_tokens is not None else AI_MAX_TOKENS,
+        ai_rpm_limit=args.ai_rpm_limit,
         human_provider=human_provider,
         human_temperature=args.human_temperature if args.human_temperature is not None else HUMAN_TEMPERATURE,
         human_max_tokens=args.human_max_tokens if args.human_max_tokens is not None else HUMAN_MAX_TOKENS,
+        human_rpm_limit=args.human_rpm_limit,
     )
 
     try:
@@ -140,6 +149,8 @@ def cmd_resume(args: argparse.Namespace) -> None:
             human_temperature_override=args.human_temperature,
             ai_max_tokens_override=args.ai_max_tokens,
             human_max_tokens_override=args.human_max_tokens,
+            ai_rpm_limit_override=args.ai_rpm_limit,
+            human_rpm_limit_override=args.human_rpm_limit,
         )
         save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
@@ -180,6 +191,10 @@ def _add_common_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--human-temperature", type=float, default=None, help="Override human simulator temperature")
     parser.add_argument("--ai-max-tokens", type=int, default=None, help="Override AI max tokens per response")
     parser.add_argument("--human-max-tokens", type=int, default=None, help="Override human max tokens per response")
+    parser.add_argument("--ai-rpm-limit", type=_positive_int, default=None, help="Limit AI requests per minute")
+    parser.add_argument(
+        "--human-rpm-limit", type=_positive_int, default=None, help="Limit human simulator requests per minute"
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Show full messages and AI thinking")
 
 

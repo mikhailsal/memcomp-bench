@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,6 +31,12 @@ class LLMResponse:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class _RPMWindow:
+    limit: int
+    timestamps: deque[float] = field(default_factory=deque)
+
+
 class OpenRouterClient:
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
@@ -37,6 +44,7 @@ class OpenRouterClient:
         self.total_cost: float = 0.0
         self.total_prompt_tokens: int = 0
         self.total_completion_tokens: int = 0
+        self._rpm_windows: dict[str, _RPMWindow] = {}
 
     _RETRYABLE_CODES = frozenset({429, 500, 502, 503, 504})
     _MAX_RETRIES = 5
@@ -52,6 +60,8 @@ class OpenRouterClient:
         tool_choice: str | dict | None = None,
         provider: dict[str, Any] | None = None,
         reasoning: dict[str, Any] | None = None,
+        request_role: str | None = None,
+        rpm_limit: int | None = None,
     ) -> LLMResponse:
         payload = self._build_payload(model, messages, max_tokens, temperature, tools, tool_choice, provider, reasoning)
         headers = {
@@ -61,7 +71,7 @@ class OpenRouterClient:
             "X-Title": "memcomp-bench",
         }
 
-        resp, elapsed = self._send_with_retries(payload, headers)
+        resp, elapsed = self._send_with_retries(payload, headers, request_role=request_role, rpm_limit=rpm_limit)
 
         data = resp.json()
         return self._parse_response(data, elapsed)
@@ -93,9 +103,49 @@ class OpenRouterClient:
             payload["reasoning"] = reasoning
         return payload
 
-    def _send_with_retries(self, payload: dict, headers: dict) -> tuple[Any, float]:
+    def _ensure_rpm_state(self) -> None:
+        if not hasattr(self, "_rpm_windows"):
+            self._rpm_windows = {}
+
+    def _prune_rpm_window(self, window: _RPMWindow, now: float) -> None:
+        cutoff = now - 60.0
+        while window.timestamps and window.timestamps[0] <= cutoff:
+            window.timestamps.popleft()
+
+    def _apply_rpm_limit(self, request_role: str | None, rpm_limit: int | None) -> None:
+        if request_role is None or rpm_limit is None:
+            return
+        if rpm_limit <= 0:
+            raise ValueError("rpm_limit must be a positive integer")
+
+        self._ensure_rpm_state()
+        window = self._rpm_windows.get(request_role)
+        if window is None or window.limit != rpm_limit:
+            window = _RPMWindow(limit=rpm_limit)
+            self._rpm_windows[request_role] = window
+
+        now = time.monotonic()
+        self._prune_rpm_window(window, now)
+        while len(window.timestamps) >= rpm_limit:
+            wait_seconds = 60.0 - (now - window.timestamps[0])
+            if wait_seconds > 0:
+                print(f"[rate-limit] {request_role} reached {rpm_limit} RPM, waiting {wait_seconds:.1f}s...")
+                time.sleep(wait_seconds)
+            now = time.monotonic()
+            self._prune_rpm_window(window, now)
+        window.timestamps.append(now)
+
+    def _send_with_retries(
+        self,
+        payload: dict,
+        headers: dict,
+        *,
+        request_role: str | None,
+        rpm_limit: int | None,
+    ) -> tuple[Any, float]:
         last_error = None
         for attempt in range(self._MAX_RETRIES):
+            self._apply_rpm_limit(request_role, rpm_limit)
             start = time.monotonic()
             try:
                 resp = self._client.post(f"{OPENROUTER_BASE_URL}/chat/completions", json=payload, headers=headers)

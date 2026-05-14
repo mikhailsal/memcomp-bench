@@ -35,6 +35,56 @@ _BRAIN = "🧠"
 _THOUGHT = "💭"
 _CLIPBOARD = "📋"
 _DOT = "·"
+_RESUME_DEFAULT_KEYS = (
+    "language",
+    "ai_model",
+    "human_model",
+    "ai_provider",
+    "human_provider",
+    "ai_reasoning",
+    "human_reasoning",
+    "ai_temperature",
+    "human_temperature",
+    "ai_max_tokens",
+    "human_max_tokens",
+    "ai_rpm_limit",
+    "human_rpm_limit",
+)
+
+
+def _get_resume_source_value(source: Any, key: str) -> Any:
+    if isinstance(source, dict):
+        return source.get(key)
+    return getattr(source, key)
+
+
+def build_resume_defaults_payload(source: Any) -> dict[str, Any]:
+    """Build the persisted resume-default payload from a record or mapping."""
+    return {key: _get_resume_source_value(source, key) for key in _RESUME_DEFAULT_KEYS}
+
+
+def get_saved_resume_defaults(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Return resume defaults, preferring the explicit nested payload when present."""
+    saved = metadata.get("resume_defaults") or {}
+    payload: dict[str, Any] = {}
+    for key in _RESUME_DEFAULT_KEYS:
+        if key in saved:
+            payload[key] = saved[key]
+        elif key in metadata:
+            payload[key] = metadata[key]
+    return payload
+
+
+def load_conversation_metadata(jsonl_path: Path) -> dict[str, Any]:
+    """Load only the metadata row from a saved conversation JSONL file."""
+    with open(jsonl_path, encoding="utf-8") as f:
+        raw = f.readline().strip()
+    if not raw:
+        raise ValueError(f"Conversation metadata missing: {jsonl_path}")
+    metadata = json.loads(raw)
+    if metadata.get("type") != "metadata":
+        raise ValueError(f"Invalid conversation metadata row: {jsonl_path}")
+    return metadata
 
 
 def _write_md_header(f: Any, record: ConversationRecord) -> None:
@@ -215,6 +265,7 @@ def load_conversation_record(jsonl_path: Path) -> ConversationRecord:
         total_cost_usd=meta.get("total_cost_usd", 0.0),
         started_at=meta.get("started_at", ""),
         finished_at=meta.get("finished_at", ""),
+        resume_defaults=meta.get("resume_defaults"),
     )
     record.turns = turns
     record.events = events
@@ -235,9 +286,9 @@ def reformat_markdown(jsonl_path: Path) -> Path:
     return md_path
 
 
-def _write_jsonl(jsonl_path: Path, record: ConversationRecord) -> None:
-    """Write the JSONL file with metadata, turns, and events."""
-    meta = {
+def _metadata_line(record: ConversationRecord) -> dict[str, Any]:
+    """Build the metadata row written at the top of the JSONL file."""
+    return {
         "type": "metadata",
         "conversation_id": record.id,
         "human_profile": record.human_profile,
@@ -262,44 +313,57 @@ def _write_jsonl(jsonl_path: Path, record: ConversationRecord) -> None:
         "total_cost_usd": record.total_cost_usd,
         "started_at": record.started_at,
         "finished_at": record.finished_at,
+        "resume_defaults": record.resume_defaults or build_resume_defaults_payload(record),
     }
+
+
+def _turn_line(turn: ConversationTurn) -> dict[str, Any]:
+    """Serialize a conversation turn to a JSONL row."""
+    return {
+        "type": "turn",
+        "turn_number": turn.turn_number,
+        "speaker": turn.speaker,
+        "visible_text": turn.visible_text,
+        "ai_thinking": turn.ai_thinking,
+        "ai_content": turn.ai_content,
+        "ai_reasoning": turn.ai_reasoning,
+        "ai_tool_calls": turn.ai_tool_calls,
+        "ai_reasoning_details": turn.ai_reasoning_details,
+        "human_reasoning": turn.human_reasoning,
+        "human_reasoning_details": turn.human_reasoning_details,
+        "token_estimate": turn.token_estimate,
+        "cost_usd": turn.cost_usd,
+        "timestamp": turn.timestamp,
+        "ai_context_tokens": turn.ai_context_tokens,
+        "human_context_tokens": turn.human_context_tokens,
+    }
+
+
+def _event_line(event: ConversationEvent) -> dict[str, Any]:
+    """Serialize a system event to a JSONL row."""
+    return {
+        "type": "event",
+        "event_type": event.event_type,
+        "turn_number": event.turn_number,
+        "source": event.source,
+        "timestamp": event.timestamp,
+        "message": event.message,
+        "previous_topic": event.previous_topic,
+        "current_topic": event.current_topic,
+        "topic_changed": event.topic_changed,
+        "nudge_injected": event.nudge_injected,
+        "suppression_reason": event.suppression_reason,
+    }
+
+
+def _write_jsonl(jsonl_path: Path, record: ConversationRecord) -> None:
+    """Write the JSONL file with metadata, turns, and events."""
     with open(jsonl_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps(meta, ensure_ascii=False) + "\n")
+        f.write(json.dumps(_metadata_line(record), ensure_ascii=False) + "\n")
         for turn in record.turns:
-            line = {
-                "type": "turn",
-                "turn_number": turn.turn_number,
-                "speaker": turn.speaker,
-                "visible_text": turn.visible_text,
-                "ai_thinking": turn.ai_thinking,
-                "ai_content": turn.ai_content,
-                "ai_reasoning": turn.ai_reasoning,
-                "ai_tool_calls": turn.ai_tool_calls,
-                "ai_reasoning_details": turn.ai_reasoning_details,
-                "human_reasoning": turn.human_reasoning,
-                "human_reasoning_details": turn.human_reasoning_details,
-                "token_estimate": turn.token_estimate,
-                "cost_usd": turn.cost_usd,
-                "timestamp": turn.timestamp,
-                "ai_context_tokens": turn.ai_context_tokens,
-                "human_context_tokens": turn.human_context_tokens,
-            }
-            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+            f.write(json.dumps(_turn_line(turn), ensure_ascii=False) + "\n")
         for event in record.events:
-            line = {
-                "type": "event",
-                "event_type": event.event_type,
-                "turn_number": event.turn_number,
-                "source": event.source,
-                "timestamp": event.timestamp,
-                "message": event.message,
-                "previous_topic": event.previous_topic,
-                "current_topic": event.current_topic,
-                "topic_changed": event.topic_changed,
-                "nudge_injected": event.nudge_injected,
-                "suppression_reason": event.suppression_reason,
-            }
-            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+            f.write(json.dumps(_event_line(event), ensure_ascii=False) + "\n")
 
 
 def _ensure_raw_ai_context(record: ConversationRecord) -> list[dict[str, Any]]:

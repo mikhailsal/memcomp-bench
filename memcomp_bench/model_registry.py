@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import tomllib
+    import tomllib  # type: ignore[import-not-found]
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10 test environment fallback
-    import tomli as tomllib
+    import tomli as tomllib  # type: ignore[import-not-found]
 
 from memcomp_bench.config import PROJECT_ROOT
 

@@ -157,6 +157,19 @@ class TestMainDispatch:
         main()
         assert called.get("reformat") is True
 
+    def test_interactive_calls_handler(self, monkeypatch):
+        from memcomp_bench.cli import main
+
+        called = {}
+
+        def fake_interactive(args):
+            called["interactive"] = True
+
+        monkeypatch.setattr("memcomp_bench.cli.cmd_interactive", fake_interactive)
+        sys.argv = ["memcomp", "interactive"]
+        main()
+        assert called.get("interactive") is True
+
     def test_generate_prefers_ai_provider_flag(self, monkeypatch):
         from memcomp_bench.cli import main
 
@@ -367,6 +380,7 @@ def _make_resume_args(jsonl_path, **overrides):
         ai_rpm_limit=None,
         human_rpm_limit=None,
         verbose=False,
+        persist_resume_defaults=False,
     )
     defaults.update(overrides)
     return Namespace(**defaults)

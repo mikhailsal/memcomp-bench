@@ -15,6 +15,7 @@ from memcomp_bench.config import (
     HUMAN_TEMPERATURE,
 )
 from memcomp_bench.model_registry import MISSING, resolve_model_preset
+from memcomp_bench.persistence import get_saved_resume_defaults
 
 
 def _extract_resume_config(
@@ -34,8 +35,9 @@ def _extract_resume_config(
     language_override: str | None,
 ) -> dict:
     """Extract and merge saved metadata with CLI overrides into a flat config dict."""
-    ai_model = ai_model_override or metadata["ai_model"]
-    human_model = human_model_override or metadata["human_model"]
+    saved_defaults = get_saved_resume_defaults(metadata)
+    ai_model = ai_model_override or saved_defaults["ai_model"]
+    human_model = human_model_override or saved_defaults["human_model"]
     ai_preset = resolve_model_preset(ai_model, "ai")
     human_preset = resolve_model_preset(human_model, "human")
 
@@ -45,13 +47,14 @@ def _extract_resume_config(
         "human_model": human_model,
         "seed_words": metadata.get("seed_words", []),
         "conversation_plan": metadata.get("conversation_plan", ""),
-        "language": language_override or metadata.get("language", "english"),
+        "language": language_override or saved_defaults.get("language", metadata.get("language", "english")),
         "companion_mode": metadata.get("companion_mode", "supportive"),
         "previous_cost": metadata.get("total_cost_usd", 0.0),
+        "saved_resume_defaults": saved_defaults,
     }
     cfg.update(
         _resolve_resume_role_settings(
-            metadata,
+            saved_defaults,
             ai_preset=ai_preset,
             human_preset=human_preset,
             ai_provider_override=ai_provider_override,
@@ -111,7 +114,7 @@ def _resolve_resume_setting(
 
 
 def _resolve_resume_role_settings(
-    metadata: dict,
+    saved_defaults: dict,
     *,
     ai_preset: Any,
     human_preset: Any,
@@ -139,7 +142,7 @@ def _resolve_resume_role_settings(
     )
 
     return {
-        key: _resolve_resume_setting(metadata, key, preset, field, fallback, override, unset=unset_value)
+        key: _resolve_resume_setting(saved_defaults, key, preset, field, fallback, override, unset=unset_value)
         for key, preset, field, fallback, override, unset_value in specs
     }
 

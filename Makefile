@@ -33,13 +33,16 @@ install: ## Install package in editable mode with test + dev dependencies
 # Benchmark CLI  (pass extra arguments via ARGS="...")
 # ---------------------------------------------------------------------------
 
-.PHONY: generate resume reformat profiles
+.PHONY: generate resume reformat profiles interactive
 
 generate: ## Generate a conversation          (ARGS="--profile vitaly --ai-rpm-limit 20 -v")
 	$(PYTHON) -m memcomp_bench.cli generate $(ARGS)
 
 resume: ## Resume an existing conversation   (ARGS="output/conv_xxx.jsonl --human-rpm-limit 10")
 	$(PYTHON) -m memcomp_bench.cli resume $(ARGS)
+
+interactive: ## Browse saved runs and launch interactive generate/resume flows
+	$(PYTHON) -m memcomp_bench.cli interactive
 
 reformat: ## Reformat markdown for a conversation (ARGS="output/conv_xxx.jsonl")
 	$(PYTHON) -m memcomp_bench.cli reformat $(ARGS)
@@ -51,12 +54,15 @@ profiles: ## List available human profiles
 # Tests
 # ---------------------------------------------------------------------------
 
-.PHONY: test test-unit test-live test-network test-all
+.PHONY: test test-unit test-functional test-live test-network test-all
 
-test: test-unit ## Run unit tests (safe default, no network needed)
+test: test-unit test-functional ## Run offline tests (unit + functional interactive coverage)
 
 test-unit: ## Run unit tests only
 	$(PYTEST) tests/unit/ $(ARGS)
+
+test-functional: ## Run offline functional CLI tests
+	$(PYTEST) tests/functional/ $(ARGS)
 
 test-live: ## Run live proxy tests   (requires local AI proxy)
 	MEMCOMP_BENCH_LIVE=1 $(PYTEST) -m live tests/live/ $(ARGS)

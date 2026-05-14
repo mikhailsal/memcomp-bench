@@ -449,6 +449,7 @@ class ConversationGenerator:
         human_max_tokens_override: int | None = None,
         ai_rpm_limit_override: int | None = None,
         human_rpm_limit_override: int | None = None,
+        persist_resume_defaults: bool = False,
     ) -> ConversationRecord:
         """Resume a conversation from a saved JSONL file."""
         from memcomp_bench._resume import _do_resume
@@ -470,4 +471,5 @@ class ConversationGenerator:
             human_max_tokens_override=human_max_tokens_override,
             ai_rpm_limit_override=ai_rpm_limit_override,
             human_rpm_limit_override=human_rpm_limit_override,
+            persist_resume_defaults=persist_resume_defaults,
         )

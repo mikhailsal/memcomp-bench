@@ -79,6 +79,7 @@ Precedence rules:
 - `resume`: explicit CLI flags, then saved JSONL metadata, then `models.toml`, then hardcoded config fallbacks.
 
 That means resume keeps the parameters saved in the conversation history unless you explicitly override them on the CLI.
+Resume overrides are temporary by default; add `--persist-resume-defaults` when you want the JSONL's future resume defaults updated too.
 
 Minimal `models.toml` example:
 
@@ -106,7 +107,26 @@ python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl \
 # Saved AI/human RPM limits are restored automatically on resume unless overridden
 python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl \
   --ai-rpm-limit 30 --human-rpm-limit 12
+
+# Persist any edited resume defaults back into the saved JSONL metadata
+python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl \
+  --ai-model "openai/gpt-4.1" \
+  --persist-resume-defaults
 ```
+
+**Interactive mode** for browsing runs, editing resume defaults, and starting new generations:
+
+```bash
+python -m memcomp_bench.cli interactive
+```
+
+The interactive flow uses arrow-key navigation (powered by [questionary](https://questionary.readthedocs.io/)) for all menu choices and typed input only where a value is actually needed. It lets you:
+
+- view saved generations with profile, token count, turn count, models used, and resumability status
+- select a run with ↑/↓ and Enter to resume it
+- inspect a run's saved settings before continuing it to a new token target
+- edit the saved resume defaults used for continuation, with an option to make those edits permanent
+- start a brand-new generation by selecting a profile from a menu and entering the remaining `generate` parameters
 
 **Reformat** the markdown file (useful after render logic updates):
 
@@ -131,6 +151,7 @@ make generate ARGS="--profile alex --language hebrew --target-tokens 50000"
 make generate ARGS="--profile michael --ai-rpm-limit 20 --human-rpm-limit 10"
 make resume ARGS="output/conv_20260326_185127_marcus.jsonl --target-tokens 150000"
 make resume ARGS="output/conv_20260326_185127_marcus.jsonl --ai-rpm-limit 30"
+make interactive                                 # browse saved runs, resume, or start new
 make reformat ARGS="output/conv_20260326_185127_marcus.jsonl"
 make profiles                                    # list all profiles
 ```
@@ -146,6 +167,8 @@ Each generation produces three files in `output/`:
 | `conv_<timestamp>_<name>.jsonl` | Structured data: metadata, turns, events (one JSON object per line) |
 | `conv_<timestamp>_<name>.md` | Human-readable markdown with reasoning panels and context stats |
 | `conv_<timestamp>_<name>_raw_ai_context.json` | Full AI message history (required for `resume`) |
+
+The JSONL metadata also stores a `resume_defaults` payload. That keeps the future default values for resume separate from the parameters used by the latest continuation, which is what makes temporary overrides possible.
 
 ## Human Profiles
 
@@ -184,7 +207,8 @@ memcomp_bench/
 ## Tests & Code Quality
 
 ```bash
-make test              # unit tests only (no network)
+make test              # offline tests: unit + functional interactive coverage
+make test-functional   # offline functional CLI coverage
 make test-live         # requires a local AI proxy (MEMCOMP_BENCH_LIVE=1)
 make test-network      # hits the public OpenRouter API (MEMCOMP_BENCH_NETWORK=1)
 make test-all          # everything

@@ -1,8 +1,7 @@
 """Dataclasses and utility functions supporting the conversation generator.
 
-Contains the core data structures (ConversationTurn, ParsedAIResponse,
-ConversationEvent, ConversationRecord) and helper functions for tool-call
-healing, token estimation, context management, and message construction.
+Contains the core data structures plus helper functions for tool-call healing,
+token estimation, context management, and message construction.
 """
 
 from __future__ import annotations
@@ -108,6 +107,7 @@ class ConversationRecord:
     finished_at: str = ""
     ai_messages_raw: list[dict[str, Any]] = field(default_factory=list)
     events: list[ConversationEvent] = field(default_factory=list)
+    resume_defaults: dict[str, Any] | None = None
 
 
 # Valid tool function names defined in AI_TOOLS.

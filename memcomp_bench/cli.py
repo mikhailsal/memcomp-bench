@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import cast
 
 from rich.console import Console
 
+from memcomp_bench._interactive_prompts import Prompter
 from memcomp_bench.config import (
     AI_MAX_TOKENS,
     AI_MODEL,
@@ -94,8 +96,10 @@ def _build_generate_kwargs(args: argparse.Namespace) -> dict[str, object]:
 
 def _finalize_generate_kwargs(args: argparse.Namespace, kwargs: dict[str, object]) -> dict[str, object]:
     """Fill the remaining per-role generate settings from CLI, presets, and config defaults."""
-    ai_preset = resolve_model_preset(kwargs["ai_model"], "ai")
-    human_preset = resolve_model_preset(kwargs["human_model"], "human")
+    ai_model = cast(str, kwargs["ai_model"])
+    human_model = cast(str, kwargs["human_model"])
+    ai_preset = resolve_model_preset(ai_model, "ai")
+    human_preset = resolve_model_preset(human_model, "human")
 
     kwargs.update(
         {
@@ -129,10 +133,26 @@ def cmd_generate(args: argparse.Namespace) -> None:
     profile = _resolve_profile(args.profile)
     console.print(f"[bold]Using human profile: {profile['name']}[/bold]")
 
+    generate_kwargs = _finalize_generate_kwargs(args, _build_generate_kwargs(args))
     generator = ConversationGenerator(
         client,
         profile,
-        **_finalize_generate_kwargs(args, _build_generate_kwargs(args)),
+        ai_model=cast(str, generate_kwargs["ai_model"]),
+        human_model=cast(str, generate_kwargs["human_model"]),
+        target_tokens=cast(int, generate_kwargs["target_tokens"]),
+        language=cast(str, generate_kwargs["language"]),
+        companion_mode=cast(str, generate_kwargs["companion_mode"]),
+        verbose=cast(bool, generate_kwargs["verbose"]),
+        ai_provider=cast(dict | None, generate_kwargs["ai_provider"]),
+        ai_reasoning=cast(dict | None, generate_kwargs["ai_reasoning"]),
+        ai_temperature=cast(float, generate_kwargs["ai_temperature"]),
+        ai_max_tokens=cast(int, generate_kwargs["ai_max_tokens"]),
+        ai_rpm_limit=cast(int | None, generate_kwargs["ai_rpm_limit"]),
+        human_provider=cast(dict | None, generate_kwargs["human_provider"]),
+        human_reasoning=cast(dict | None, generate_kwargs["human_reasoning"]),
+        human_temperature=cast(float, generate_kwargs["human_temperature"]),
+        human_max_tokens=cast(int, generate_kwargs["human_max_tokens"]),
+        human_rpm_limit=cast(int | None, generate_kwargs["human_rpm_limit"]),
     )
 
     try:
@@ -189,6 +209,7 @@ def cmd_resume(args: argparse.Namespace) -> None:
             human_max_tokens_override=args.human_max_tokens,
             ai_rpm_limit_override=args.ai_rpm_limit,
             human_rpm_limit_override=args.human_rpm_limit,
+            persist_resume_defaults=args.persist_resume_defaults,
         )
         save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
@@ -214,6 +235,24 @@ def cmd_list_profiles(args: argparse.Namespace) -> None:
         console.print(f"  [bold]{i}[/bold]: {profile['name']}")
         console.print(f"     {profile['backstory'][:120]}...")
         console.print()
+
+
+def cmd_interactive(
+    args: argparse.Namespace,
+    *,
+    prompter: Prompter | None = None,
+    console_override: Console | None = None,
+) -> None:
+    """Run the prompt-driven interactive benchmark interface."""
+    from memcomp_bench.interactive import run_interactive
+
+    run_interactive(
+        cmd_generate,
+        cmd_resume,
+        output_dir=OUTPUT_DIR,
+        console=console_override,
+        prompter=prompter,
+    )
 
 
 def _add_common_model_args(parser: argparse.ArgumentParser) -> None:
@@ -271,6 +310,11 @@ def _build_resume_parser(sub: argparse._SubParsersAction) -> None:
     res.add_argument(
         "--language", type=str, default=None, help="Override language (normally loaded from saved conversation)"
     )
+    res.add_argument(
+        "--persist-resume-defaults",
+        action="store_true",
+        help="Update the saved JSONL resume defaults with any overrides used for this continuation",
+    )
     _add_common_model_args(res)
     res.set_defaults(func=cmd_resume)
 
@@ -288,6 +332,9 @@ def main() -> None:
 
     profiles = sub.add_parser("profiles", help="List human profiles")
     profiles.set_defaults(func=cmd_list_profiles)
+
+    interactive = sub.add_parser("interactive", help="Browse saved runs and launch generate/resume flows")
+    interactive.set_defaults(func=cmd_interactive)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

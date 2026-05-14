@@ -25,6 +25,7 @@ from memcomp_bench.generator_helpers import (
     _uses_native_reasoning_field,
 )
 from memcomp_bench.openrouter_client import OpenRouterClient
+from memcomp_bench.persistence import build_resume_defaults_payload
 from memcomp_bench.prompts import build_ai_system_prompt, set_tool_call_counter
 
 console = Console()
@@ -48,6 +49,7 @@ def _do_resume(
     human_max_tokens_override: int | None = None,
     ai_rpm_limit_override: int | None = None,
     human_rpm_limit_override: int | None = None,
+    persist_resume_defaults: bool = False,
 ) -> ConversationRecord:
     """Implementation of ConversationGenerator.resume()."""
     from memcomp_bench.generator import _UNSET
@@ -90,9 +92,17 @@ def _do_resume(
         target_tokens=target_tokens,
         verbose=verbose,
     )
+    gen._record.resume_defaults = _resume_defaults_for_save(cfg, persist_resume_defaults)
     _restore_events_and_turns(gen, events, turns)
 
     return _start_resumed_loop(gen, turns, ai_messages)
+
+
+def _resume_defaults_for_save(cfg: dict[str, Any], persist_resume_defaults: bool) -> dict[str, Any]:
+    """Choose which resume defaults should be written after a continuation."""
+    if persist_resume_defaults:
+        return build_resume_defaults_payload(cfg)
+    return cfg["saved_resume_defaults"]
 
 
 def _start_resumed_loop(gen: Any, turns: list, ai_messages: list) -> ConversationRecord:

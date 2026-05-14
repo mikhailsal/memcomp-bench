@@ -16,6 +16,7 @@ from memcomp_bench.config import (
     HUMAN_MAX_TOKENS,
     HUMAN_MODEL,
     HUMAN_PROVIDER,
+    HUMAN_REASONING,
     HUMAN_TEMPERATURE,
     OUTPUT_DIR,
     TARGET_TOKENS,
@@ -23,6 +24,7 @@ from memcomp_bench.config import (
     load_api_key,
 )
 from memcomp_bench.generator import _UNSET, ConversationGenerator, reformat_markdown, save_conversation
+from memcomp_bench.model_registry import MISSING, default_model_for, resolve_model_preset
 from memcomp_bench.openrouter_client import OpenRouterClient
 from memcomp_bench.prompts import HUMAN_PROFILES, get_human_profile
 
@@ -54,6 +56,70 @@ def _resolve_profile(value: str) -> dict[str, str]:
     sys.exit(1)
 
 
+def _resolve_optional_setting(cli_value: object, preset_value: object, fallback: object) -> object:
+    """Return CLI override first, then model preset, then hardcoded fallback."""
+    if cli_value is not None:
+        return cli_value
+    if preset_value is not MISSING:
+        return preset_value
+    return fallback
+
+
+def _resolve_provider_setting(provider_arg: str | None, preset_provider: object, fallback: object) -> object:
+    """Resolve provider config with CLI taking precedence over preset/default."""
+    provider = fallback if preset_provider is MISSING else preset_provider
+    if provider_arg is None:
+        return provider
+    return {"only": [provider_arg], "allow_fallbacks": False} if provider_arg else None
+
+
+def _build_generate_kwargs(args: argparse.Namespace) -> dict[str, object]:
+    """Build ConversationGenerator kwargs for the generate command."""
+    ai_model = args.ai_model or default_model_for("ai") or AI_MODEL
+    human_model = args.human_model or default_model_for("human") or HUMAN_MODEL
+    ai_preset = resolve_model_preset(ai_model, "ai")
+    human_preset = resolve_model_preset(human_model, "human")
+
+    return {
+        "ai_model": ai_model,
+        "human_model": human_model,
+        "target_tokens": args.target_tokens or TARGET_TOKENS,
+        "language": args.language,
+        "companion_mode": args.companion_mode,
+        "verbose": args.verbose,
+        "ai_provider": _resolve_provider_setting(args.ai_provider, ai_preset.provider, AI_PROVIDER),
+        "human_provider": _resolve_provider_setting(args.human_provider, human_preset.provider, HUMAN_PROVIDER),
+    }
+
+
+def _finalize_generate_kwargs(args: argparse.Namespace, kwargs: dict[str, object]) -> dict[str, object]:
+    """Fill the remaining per-role generate settings from CLI, presets, and config defaults."""
+    ai_preset = resolve_model_preset(kwargs["ai_model"], "ai")
+    human_preset = resolve_model_preset(kwargs["human_model"], "human")
+
+    kwargs.update(
+        {
+            "ai_reasoning": _resolve_optional_setting(None, ai_preset.reasoning, AI_REASONING),
+            "human_reasoning": _resolve_optional_setting(None, human_preset.reasoning, HUMAN_REASONING),
+            "ai_temperature": _resolve_optional_setting(args.ai_temperature, ai_preset.temperature, AI_TEMPERATURE),
+            "human_temperature": _resolve_optional_setting(
+                args.human_temperature,
+                human_preset.temperature,
+                HUMAN_TEMPERATURE,
+            ),
+            "ai_max_tokens": _resolve_optional_setting(args.ai_max_tokens, ai_preset.max_tokens, AI_MAX_TOKENS),
+            "human_max_tokens": _resolve_optional_setting(
+                args.human_max_tokens,
+                human_preset.max_tokens,
+                HUMAN_MAX_TOKENS,
+            ),
+            "ai_rpm_limit": _resolve_optional_setting(args.ai_rpm_limit, ai_preset.rpm_limit, None),
+            "human_rpm_limit": _resolve_optional_setting(args.human_rpm_limit, human_preset.rpm_limit, None),
+        }
+    )
+    return kwargs
+
+
 def cmd_generate(args: argparse.Namespace) -> None:
     """Generate a conversation."""
     ensure_dirs()
@@ -63,38 +129,10 @@ def cmd_generate(args: argparse.Namespace) -> None:
     profile = _resolve_profile(args.profile)
     console.print(f"[bold]Using human profile: {profile['name']}[/bold]")
 
-    ai_model = args.ai_model or AI_MODEL
-    human_model = args.human_model or HUMAN_MODEL
-    target = args.target_tokens or TARGET_TOKENS
-
-    # Provider override: None = use config default; "" = clear; slug = lock to that provider
-    ai_provider = AI_PROVIDER
-    if args.ai_provider is not None:
-        ai_provider = {"only": [args.ai_provider], "allow_fallbacks": False} if args.ai_provider else None
-
-    # Human provider override
-    human_provider = HUMAN_PROVIDER
-    if args.human_provider is not None:
-        human_provider = {"only": [args.human_provider], "allow_fallbacks": False} if args.human_provider else None
-
     generator = ConversationGenerator(
         client,
         profile,
-        ai_model=ai_model,
-        human_model=human_model,
-        target_tokens=target,
-        language=args.language,
-        companion_mode=args.companion_mode,
-        verbose=args.verbose,
-        ai_provider=ai_provider,
-        ai_reasoning=AI_REASONING,
-        ai_temperature=args.ai_temperature if args.ai_temperature is not None else AI_TEMPERATURE,
-        ai_max_tokens=args.ai_max_tokens if args.ai_max_tokens is not None else AI_MAX_TOKENS,
-        ai_rpm_limit=args.ai_rpm_limit,
-        human_provider=human_provider,
-        human_temperature=args.human_temperature if args.human_temperature is not None else HUMAN_TEMPERATURE,
-        human_max_tokens=args.human_max_tokens if args.human_max_tokens is not None else HUMAN_MAX_TOKENS,
-        human_rpm_limit=args.human_rpm_limit,
+        **_finalize_generate_kwargs(args, _build_generate_kwargs(args)),
     )
 
     try:

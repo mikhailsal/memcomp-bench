@@ -71,6 +71,31 @@ python -m memcomp_bench.cli generate \
 python -m memcomp_bench.cli generate --ai-provider minimax --human-provider x-ai
 ```
 
+`generate` now reads model defaults from `models.toml` in the repo root. That file defines the default AI/human models plus per-model defaults such as `provider`, `reasoning`, `temperature`, `max_tokens`, and `rpm_limit`, with optional role-specific overrides when the same model is used as `ai` vs `human`.
+
+Precedence rules:
+
+- `generate`: CLI flags, then `models.toml`, then hardcoded config fallbacks.
+- `resume`: explicit CLI flags, then saved JSONL metadata, then `models.toml`, then hardcoded config fallbacks.
+
+That means resume keeps the parameters saved in the conversation history unless you explicitly override them on the CLI.
+
+Minimal `models.toml` example:
+
+```toml
+[defaults]
+ai_model = "minimax/minimax-m2.7"
+human_model = "x-ai/grok-4.1-fast"
+
+[models."minimax/minimax-m2.7"]
+temperature = 1.1
+provider = "auto"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."minimax/minimax-m2.7".roles.ai]
+max_tokens = 2048
+```
+
 **Resume** an interrupted or completed conversation to extend it further:
 
 ```bash

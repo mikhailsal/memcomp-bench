@@ -363,6 +363,57 @@ class TestResumeLoop:
         assert all(call.get("rpm_limit") == 6 for call in ai_calls)
         assert all(call.get("rpm_limit") == 4 for call in human_calls)
 
+    def test_resume_uses_saved_metadata_over_new_model_preset_defaults(self, monkeypatch, tmp_output_dir: Path):
+        monkeypatch.setattr(time, "sleep", lambda _: None)
+        client = _scripted_client_for_generate()
+        gen = ConversationGenerator(
+            client,
+            HUMAN_PROFILES[0],
+            target_tokens=300,
+            max_turns=10,
+            ai_model="minimax/minimax-m2.7",
+            human_model="x-ai/grok-4.1-fast",
+            ai_provider={"only": ["minimax"], "allow_fallbacks": False},
+            ai_reasoning={"effort": "high"},
+            ai_max_tokens=777,
+            human_max_tokens=333,
+        )
+        jsonl_path = save_conversation(gen.generate(), tmp_output_dir)
+
+        resume_client = FakeChatClient()
+        for i in range(6):
+            if i % 2 == 0:
+                resume_client.enqueue(
+                    make_tool_call_response(
+                        f"AI resumed {i}",
+                        tool_call_id=f"wmth_keep{i:03d}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=30,
+                    )
+                )
+            else:
+                resume_client.enqueue(
+                    make_plain_response(
+                        f"Human resumed {i}",
+                        prompt_tokens=900 + i * 100,
+                        completion_tokens=25,
+                    )
+                )
+
+        record = ConversationGenerator.resume(
+            resume_client,
+            jsonl_path,
+            target_tokens=500,
+            verbose=False,
+            ai_model_override="google/gemma-4-31b-it:free",
+        )
+
+        assert record.ai_model == "google/gemma-4-31b-it:free"
+        assert record.ai_provider == {"only": ["minimax"], "allow_fallbacks": False}
+        assert record.ai_reasoning == {"effort": "high"}
+        assert record.ai_max_tokens == 777
+        assert record.human_max_tokens == 333
+
 
 class TestVerboseMode:
     """Exercise the verbose _log_turn branches."""

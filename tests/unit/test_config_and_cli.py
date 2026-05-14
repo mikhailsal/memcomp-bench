@@ -157,6 +157,32 @@ class TestMainDispatch:
         main()
         assert called.get("reformat") is True
 
+    def test_generate_prefers_ai_provider_flag(self, monkeypatch):
+        from memcomp_bench.cli import main
+
+        seen = {}
+
+        def fake_generate(args):
+            seen["ai_provider"] = args.ai_provider
+
+        monkeypatch.setattr("memcomp_bench.cli.cmd_generate", fake_generate)
+        sys.argv = ["memcomp", "generate", "--profile", "0", "--ai-provider", "minimax"]
+        main()
+        assert seen["ai_provider"] == "minimax"
+
+    def test_generate_accepts_provider_alias(self, monkeypatch):
+        from memcomp_bench.cli import main
+
+        seen = {}
+
+        def fake_generate(args):
+            seen["ai_provider"] = args.ai_provider
+
+        monkeypatch.setattr("memcomp_bench.cli.cmd_generate", fake_generate)
+        sys.argv = ["memcomp", "generate", "--profile", "0", "--provider", "minimax"]
+        main()
+        assert seen["ai_provider"] == "minimax"
+
 
 class TestCmdReformatDirect:
     """Test cmd_reformat with an actual JSONL file."""
@@ -221,7 +247,7 @@ def _make_generate_args(**overrides):
         language="english",
         companion_mode="honest",
         verbose=False,
-        provider=None,
+        ai_provider=None,
         human_provider=None,
         ai_temperature=None,
         human_temperature=None,
@@ -328,7 +354,7 @@ def _make_resume_args(jsonl_path, **overrides):
         language=None,
         ai_model=None,
         human_model=None,
-        provider=None,
+        ai_provider=None,
         human_provider=None,
         ai_temperature=None,
         human_temperature=None,

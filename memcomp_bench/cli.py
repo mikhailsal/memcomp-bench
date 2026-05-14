@@ -62,8 +62,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
 
     # Provider override: None = use config default; "" = clear; slug = lock to that provider
     ai_provider = AI_PROVIDER
-    if args.provider is not None:
-        ai_provider = {"only": [args.provider], "allow_fallbacks": False} if args.provider else None
+    if args.ai_provider is not None:
+        ai_provider = {"only": [args.ai_provider], "allow_fallbacks": False} if args.ai_provider else None
 
     # Human provider override
     human_provider = HUMAN_PROVIDER
@@ -128,8 +128,8 @@ def cmd_resume(args: argparse.Namespace) -> None:
             # None = not specified (use saved); "" = clear; slug = lock to that provider
             ai_provider_override=(
                 _UNSET
-                if args.provider is None
-                else ({"only": [args.provider], "allow_fallbacks": False} if args.provider else None)
+                if args.ai_provider is None
+                else ({"only": [args.ai_provider], "allow_fallbacks": False} if args.ai_provider else None)
             ),
             human_provider_override=(
                 _UNSET
@@ -171,7 +171,10 @@ def _add_common_model_args(parser: argparse.ArgumentParser) -> None:
     """Add model/provider/temperature arguments shared by generate and resume."""
     parser.add_argument("--ai-model", type=str, default=None, help="Override AI model")
     parser.add_argument("--human-model", type=str, default=None, help="Override human simulator model")
-    parser.add_argument("--provider", type=str, default=None, help="Force AI provider slug (e.g. 'minimax')")
+    parser.add_argument(
+        "--ai-provider", dest="ai_provider", type=str, default=None, help="Force AI provider slug (e.g. 'minimax')"
+    )
+    parser.add_argument("--provider", dest="ai_provider", type=str, help=argparse.SUPPRESS)
     parser.add_argument("--human-provider", type=str, default=None, help="Force human simulator provider slug")
     parser.add_argument("--ai-temperature", type=float, default=None, help="Override AI model temperature")
     parser.add_argument("--human-temperature", type=float, default=None, help="Override human simulator temperature")

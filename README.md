@@ -63,7 +63,7 @@ python -m memcomp_bench.cli generate \
   --human-max-tokens 1200
 
 # Force a specific provider slug (OpenRouter provider routing)
-python -m memcomp_bench.cli generate --provider minimax --human-provider x-ai
+python -m memcomp_bench.cli generate --ai-provider minimax --human-provider x-ai
 ```
 
 **Resume** an interrupted or completed conversation to extend it further:

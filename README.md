@@ -114,19 +114,35 @@ python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl \
   --persist-resume-defaults
 ```
 
-**Interactive mode** for browsing runs, editing resume defaults, and starting new generations:
+**Interactive mode** — a first-class terminal TUI for browsing, inspecting, resuming, and starting conversation runs:
 
 ```bash
 python -m memcomp_bench.cli interactive
 ```
 
-The interactive flow uses arrow-key navigation (powered by [questionary](https://questionary.readthedocs.io/)) for all menu choices and typed input only where a value is actually needed. It lets you:
+The interactive mode presents a three-way mode selector on launch:
 
-- view saved generations with profile, token count, turn count, models used, and resumability status
-- select a run with ↑/↓ and Enter to resume it
-- inspect a run's saved settings before continuing it to a new token target
-- edit the saved resume defaults used for continuation, with an option to make those edits permanent
-- start a brand-new generation by selecting a profile from a menu and entering the remaining `generate` parameters
+| Mode | Hotkey | Description |
+|------|--------|-------------|
+| New generation | `n` | Select a profile, configure models and parameters, start generating |
+| Resume a run | `r` | Pick a saved run, optionally edit defaults, continue to a new token target |
+| View saved runs | `v` | Browse and inspect runs without modifying anything |
+| Quit | `q` | Exit |
+
+**Navigation:** fully operable via arrows + Enter + Escape, or via single-key hotkeys for power users.
+
+**Run list features:**
+- Multi-column display showing profile, tokens, turns, language (2-letter), AI model, human model, and relative age
+- Sortable: newest/oldest, most/fewest tokens, most turns, by profile name (A-Z)
+- Searchable: press `/` for incremental filter across all columns
+- Terminal-size adaptive: columns adjust or hide based on available width
+- Smart model name truncation: strips provider prefix first, then trims from the beginning preserving the version suffix
+
+**Detail panel:** selecting a run shows a comprehensive Rich-formatted panel with sections for General (file, timestamps, duration, status), Conversation (profile, language, tokens, turns, cost), AI Model (model, provider, temperature, max tokens, RPM, reasoning), Human Simulator (same fields), and Resume Defaults (if different from the last run's effective config).
+
+**Model entry:** when starting a new generation, AI and human models show the resolved default from `models.toml` and accept any model ID via free-text entry.
+
+**Status bar:** always visible at the bottom showing available keybindings for the current context.
 
 **Reformat** the markdown file (useful after render logic updates):
 
@@ -190,18 +206,21 @@ Nine built-in profiles, each with a unique backstory and conversational style:
 
 ```
 memcomp_bench/
-├── cli.py              # CLI entry point (generate / resume / reformat / profiles)
-├── config.py           # All defaults: models, tokens, temperature, API settings
-├── generator.py        # ConversationGenerator — orchestrates the dialogue
-├── generator_helpers.py# Dataclasses (Turn, Record, Event) and utility functions
-├── openrouter_client.py# OpenRouter HTTP client with retries and cost tracking
-├── prompts.py          # AI system prompt, tool definitions, seed words
-├── profiles.py         # Human profile definitions and special character prompts
-├── prompt_templates.py # Long-form prompt templates (human simulator, plan generator)
-├── persistence.py      # Save/load JSONL, markdown rendering, reformat
-├── _run_loop.py        # Core conversation loop (extracted for file-size limits)
-├── _resume.py          # Resume logic (context restoration, config merging)
-└── _logging.py         # Rich-based verbose/compact turn logging
+├── cli.py                  # CLI entry point (generate / resume / reformat / profiles / interactive)
+├── config.py               # All defaults: models, tokens, temperature, API settings
+├── generator.py            # ConversationGenerator — orchestrates the dialogue
+├── generator_helpers.py    # Dataclasses (Turn, Record, Event) and utility functions
+├── openrouter_client.py    # OpenRouter HTTP client with retries and cost tracking
+├── prompts.py              # AI system prompt, tool definitions, seed words
+├── profiles.py             # Human profile definitions and special character prompts
+├── prompt_templates.py     # Long-form prompt templates (human simulator, plan generator)
+├── persistence.py          # Save/load JSONL, markdown rendering, reformat
+├── interactive.py          # Interactive mode: flows (view, resume, generate), sorting
+├── _interactive_prompts.py # Prompter protocol, TerminalMenu/questionary backends, utilities
+├── _interactive_display.py # Run list formatting, detail panels, summary headers
+├── _run_loop.py            # Core conversation loop (extracted for file-size limits)
+├── _resume.py              # Resume logic (context restoration, config merging)
+└── _logging.py             # Rich-based verbose/compact turn logging
 ```
 
 ## Tests & Code Quality

@@ -9,16 +9,20 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
+from memcomp_bench._interactive_display import (
+    format_run_line,
+    render_run_detail,
+    render_summary_header,
+)
 from memcomp_bench._interactive_prompts import (
+    SORT_ORDERS,
     Prompter,
-    QuestionaryPrompter,
+    TerminalMenuPrompter,
     default_target_tokens,
-    format_value,
     prompt_generate_args,
     prompt_resume_overrides,
+    terminal_width,
 )
 from memcomp_bench.persistence import (
     build_resume_defaults_payload,
@@ -26,6 +30,13 @@ from memcomp_bench.persistence import (
     load_conversation_metadata,
 )
 from memcomp_bench.prompts import HUMAN_PROFILES
+
+MODE_NEW = "New generation"
+MODE_RESUME = "Resume a run"
+MODE_VIEW = "View saved runs"
+MODE_QUIT = "Quit"
+MAIN_ACTIONS = [MODE_NEW, MODE_RESUME, MODE_VIEW, MODE_QUIT]
+BACK_LABEL = "\u2190 Back"
 
 
 @dataclass
@@ -55,23 +66,25 @@ def run_interactive(
     console: Console | None = None,
     prompter: Prompter | None = None,
 ) -> None:
-    """Run a single interactive CLI session."""
+    """Run a single interactive CLI session with three-way mode selection."""
     active_console = console or Console()
-    active_prompter = prompter or QuestionaryPrompter()
+    active_prompter = prompter or TerminalMenuPrompter()
     summaries = scan_saved_conversations(output_dir)
-    if summaries:
-        _render_saved_runs(active_console, summaries)
-    action = _prompt_main_action(active_console, active_prompter, has_saved_runs=bool(summaries))
+
+    action = _prompt_main_action(active_console, active_prompter, summaries)
     if action == "resume":
         _run_resume_flow(active_console, active_prompter, summaries, resume_handler)
-        return
-    if action == "generate":
+    elif action == "generate":
         _run_generate_flow(active_console, active_prompter, generate_handler)
+    elif action == "view":
+        _run_view_flow(active_console, active_prompter, summaries)
 
 
 def scan_saved_conversations(output_dir: Path) -> list[SavedConversationSummary]:
     """Read saved JSONL files from the output directory and build summaries."""
     summaries: list[SavedConversationSummary] = []
+    if not output_dir.exists():
+        return summaries
     for jsonl_path in sorted(output_dir.glob("conv_*.jsonl"), reverse=True):
         try:
             metadata = load_conversation_metadata(jsonl_path)
@@ -96,47 +109,86 @@ def scan_saved_conversations(output_dir: Path) -> list[SavedConversationSummary]
 
 def format_run_choice(summary: SavedConversationSummary) -> str:
     """Format a saved run as a display string for the selection menu."""
-    status = "ready" if summary.resumable else "no context"
     ai_model = summary.effective_config.get("ai_model") or "-"
+    human_model = summary.effective_config.get("human_model") or "-"
+    from memcomp_bench._interactive_prompts import truncate_model_name
+
+    ai_short = truncate_model_name(ai_model, 20)
+    hu_short = truncate_model_name(human_model, 20)
     return (
         f"{summary.profile_name}  \u2014  {summary.total_tokens_estimate:,} tokens"
-        f"  \u2014  {summary.total_turns} turns  \u2014  {ai_model}  [{status}]"
+        f"  \u2014  {summary.total_turns} turns  \u2014  {ai_short} / {hu_short}"
     )
 
 
-def _render_saved_runs(console: Console, summaries: list[SavedConversationSummary]) -> None:
-    table = Table(title="Saved Generations")
-    table.add_column("#", justify="right")
-    table.add_column("Profile")
-    table.add_column("Tokens", justify="right")
-    table.add_column("Turns", justify="right")
-    table.add_column("AI model")
-    table.add_column("Human model")
-    table.add_column("Status")
-    for index, summary in enumerate(summaries, start=1):
-        status = "ready" if summary.resumable else "missing raw context"
-        table.add_row(
-            str(index),
-            summary.profile_name,
-            f"{summary.total_tokens_estimate:,}",
-            str(summary.total_turns),
-            str(summary.effective_config.get("ai_model", "-")),
-            str(summary.effective_config.get("human_model", "-")),
-            status,
+def sort_summaries(summaries: list[SavedConversationSummary], order: str) -> list[SavedConversationSummary]:
+    """Sort summaries according to the selected sort order."""
+    if order == "Oldest first":
+        return sorted(summaries, key=lambda s: s.started_at or "")
+    if order == "Most tokens":
+        return sorted(summaries, key=lambda s: s.total_tokens_estimate, reverse=True)
+    if order == "Fewest tokens":
+        return sorted(summaries, key=lambda s: s.total_tokens_estimate)
+    if order == "Most turns":
+        return sorted(summaries, key=lambda s: s.total_turns, reverse=True)
+    if order == "By profile (A-Z)":
+        return sorted(summaries, key=lambda s: s.profile_name.lower())
+    # Default: newest first
+    return sorted(summaries, key=lambda s: s.started_at or "", reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Flow: main action
+# ---------------------------------------------------------------------------
+
+
+def _prompt_main_action(console: Console, prompter: Prompter, summaries: list[SavedConversationSummary]) -> str:
+    if summaries:
+        total_tokens = sum(s.total_tokens_estimate for s in summaries)
+        resumable = sum(1 for s in summaries if s.resumable)
+        console.print(
+            f"\n  [bold]{len(summaries)}[/bold] saved runs "
+            f"| [bold]{total_tokens:,}[/bold] tokens "
+            f"| [bold]{resumable}[/bold] resumable\n"
         )
-    console.print(table)
-
-
-def _prompt_main_action(console: Console, prompter: Prompter, *, has_saved_runs: bool) -> str:
-    choices = ["Start a new generation", "Exit"]
-    if has_saved_runs:
-        choices = ["Continue a saved generation", "Start a new generation", "Exit"]
+    choices = MAIN_ACTIONS if summaries else [MODE_NEW, MODE_QUIT]
     result = prompter.select("What would you like to do?", choices)
-    if result == "Continue a saved generation":
+    if result == MODE_RESUME:
         return "resume"
-    if result == "Start a new generation":
+    if result == MODE_NEW:
         return "generate"
+    if result == MODE_VIEW:
+        return "view"
     return "exit"
+
+
+# ---------------------------------------------------------------------------
+# Flow: view saved runs (read-only browse)
+# ---------------------------------------------------------------------------
+
+
+def _run_view_flow(
+    console: Console,
+    prompter: Prompter,
+    summaries: list[SavedConversationSummary],
+) -> None:
+    if not summaries:
+        console.print("[yellow]No saved generations found.[/yellow]")
+        return
+    sort_order = _prompt_sort_order(prompter)
+    sorted_runs = sort_summaries(summaries, sort_order)
+    while True:
+        render_summary_header(console, sorted_runs, sort_order)
+        summary = _prompt_run_picker(console, prompter, sorted_runs)
+        if summary is None:
+            return
+        render_run_detail(console, summary)
+        prompter.ask("Press Enter to return to list", default="")
+
+
+# ---------------------------------------------------------------------------
+# Flow: resume
+# ---------------------------------------------------------------------------
 
 
 def _run_resume_flow(
@@ -148,13 +200,16 @@ def _run_resume_flow(
     if not summaries:
         console.print("[yellow]No saved generations were found.[/yellow]")
         return
-    summary = _prompt_saved_run(console, prompter, summaries)
+    sort_order = _prompt_sort_order(prompter)
+    sorted_runs = sort_summaries(summaries, sort_order)
+    render_summary_header(console, sorted_runs, sort_order)
+    summary = _prompt_run_picker(console, prompter, sorted_runs)
     if summary is None:
         return
     if not summary.resumable:
         console.print("[bold red]Cannot resume: raw AI context file is missing.[/bold red]")
         return
-    _render_run_details(console, summary)
+    render_run_detail(console, summary)
     mode = _prompt_resume_mode(console, prompter)
     if mode == "cancel":
         return
@@ -167,64 +222,40 @@ def _run_resume_flow(
     resume_handler(_build_resume_args(summary.jsonl_path, target_tokens, overrides, persist_defaults))
 
 
-def _prompt_saved_run(
+# ---------------------------------------------------------------------------
+# Flow: generate
+# ---------------------------------------------------------------------------
+
+
+def _run_generate_flow(console: Console, prompter: Prompter, generate_handler: Any) -> None:
+    profile_choices = [f"{i}  {p['name']}" for i, p in enumerate(HUMAN_PROFILES)]
+    selected = prompter.select("Select a human profile", profile_choices)
+    profile_idx = selected.split()[0]
+    generate_handler(prompt_generate_args(console, prompter, profile=profile_idx))
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _prompt_sort_order(prompter: Prompter) -> str:
+    return prompter.select("Sort order", SORT_ORDERS, default="Newest first")
+
+
+def _prompt_run_picker(
     console: Console,
     prompter: Prompter,
     summaries: list[SavedConversationSummary],
 ) -> SavedConversationSummary | None:
-    choices = [format_run_choice(s) for s in summaries]
-    choices.append("\u2190 Back")
-    result = prompter.select("Select a generation to resume", choices)
-    if result == "\u2190 Back":
+    tw = terminal_width()
+    choices = [format_run_line(i + 1, len(summaries), s, tw) for i, s in enumerate(summaries)]
+    choices.append(BACK_LABEL)
+    result = prompter.select("Select a run", choices)
+    if result == BACK_LABEL:
         return None
     idx = choices.index(result)
     return summaries[idx]
-
-
-def _render_run_details(console: Console, summary: SavedConversationSummary) -> None:
-    lines = [
-        f"Path: {summary.jsonl_path}",
-        f"Started: {summary.started_at or '-'}",
-        f"Finished: {summary.finished_at or '-'}",
-        f"Tokens generated: {summary.total_tokens_estimate:,}",
-        f"Total turns: {summary.total_turns}",
-        f"AI model used: {format_value(summary.effective_config.get('ai_model'))}",
-        f"Human model used: {format_value(summary.effective_config.get('human_model'))}",
-        f"Language: {format_value(summary.effective_config.get('language'))}",
-        f"AI provider: {format_value(summary.effective_config.get('ai_provider'))}",
-        f"Human provider: {format_value(summary.effective_config.get('human_provider'))}",
-        f"AI reasoning: {format_value(summary.effective_config.get('ai_reasoning'))}",
-        f"Human reasoning: {format_value(summary.effective_config.get('human_reasoning'))}",
-        f"AI temperature: {format_value(summary.effective_config.get('ai_temperature'))}",
-        f"Human temperature: {format_value(summary.effective_config.get('human_temperature'))}",
-        f"AI max tokens: {format_value(summary.effective_config.get('ai_max_tokens'))}",
-        f"Human max tokens: {format_value(summary.effective_config.get('human_max_tokens'))}",
-        f"AI RPM limit: {format_value(summary.effective_config.get('ai_rpm_limit'))}",
-        f"Human RPM limit: {format_value(summary.effective_config.get('human_rpm_limit'))}",
-    ]
-    if summary.saved_defaults != summary.effective_config:
-        lines.append("")
-        lines.append("Future resume defaults:")
-        lines.extend(_render_saved_defaults(summary.saved_defaults))
-    console.print(Panel("\n".join(lines), title=f"Saved Run: {summary.profile_name}"))
-
-
-def _render_saved_defaults(saved_defaults: dict[str, Any]) -> list[str]:
-    return [
-        f"  AI model: {format_value(saved_defaults.get('ai_model'))}",
-        f"  Human model: {format_value(saved_defaults.get('human_model'))}",
-        f"  Language: {format_value(saved_defaults.get('language'))}",
-        f"  AI provider: {format_value(saved_defaults.get('ai_provider'))}",
-        f"  Human provider: {format_value(saved_defaults.get('human_provider'))}",
-        f"  AI reasoning: {format_value(saved_defaults.get('ai_reasoning'))}",
-        f"  Human reasoning: {format_value(saved_defaults.get('human_reasoning'))}",
-        f"  AI temperature: {format_value(saved_defaults.get('ai_temperature'))}",
-        f"  Human temperature: {format_value(saved_defaults.get('human_temperature'))}",
-        f"  AI max tokens: {format_value(saved_defaults.get('ai_max_tokens'))}",
-        f"  Human max tokens: {format_value(saved_defaults.get('human_max_tokens'))}",
-        f"  AI RPM limit: {format_value(saved_defaults.get('ai_rpm_limit'))}",
-        f"  Human RPM limit: {format_value(saved_defaults.get('human_rpm_limit'))}",
-    ]
 
 
 def _prompt_resume_mode(console: Console, prompter: Prompter) -> str:
@@ -275,10 +306,3 @@ def _build_resume_args(
         verbose=False,
         persist_resume_defaults=persist_defaults,
     )
-
-
-def _run_generate_flow(console: Console, prompter: Prompter, generate_handler: Any) -> None:
-    profile_choices = [f"{i}  {p['name']}" for i, p in enumerate(HUMAN_PROFILES)]
-    selected = prompter.select("Select a human profile", profile_choices)
-    profile_idx = selected.split()[0]
-    generate_handler(prompt_generate_args(console, prompter, profile=profile_idx))

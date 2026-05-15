@@ -10,8 +10,14 @@ from pathlib import Path
 
 from rich.console import Console
 
+from memcomp_bench._interactive_display import format_run_line
 from memcomp_bench.generator import ConversationRecord, ConversationTurn, save_conversation
-from memcomp_bench.interactive import format_run_choice, scan_saved_conversations
+from memcomp_bench.interactive import (
+    MODE_NEW,
+    MODE_RESUME,
+    MODE_VIEW,
+    scan_saved_conversations,
+)
 from memcomp_bench.persistence import load_conversation_metadata
 from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
 
@@ -117,8 +123,13 @@ def _make_generate_client() -> FakeChatClient:
     return fake
 
 
+def _patch_terminal_width(monkeypatch):
+    monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
+
+
 def test_interactive_resume_can_apply_temporary_override(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(time, "sleep", lambda _: None)
+    _patch_terminal_width(monkeypatch)
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", output_dir)
@@ -126,7 +137,8 @@ def test_interactive_resume_can_apply_temporary_override(monkeypatch, tmp_path: 
     monkeypatch.setenv("OPENROUTER_KEY", "interactive-test-key")
 
     jsonl_path = save_conversation(_make_resume_record(), output_dir)
-    run_choice = format_run_choice(scan_saved_conversations(output_dir)[0])
+    summaries = scan_saved_conversations(output_dir)
+    run_line = format_run_line(1, 1, summaries[0], width=120)
     fake = _make_resume_client()
     monkeypatch.setattr("memcomp_bench.cli.OpenRouterClient", lambda key: fake)
 
@@ -135,9 +147,10 @@ def test_interactive_resume_can_apply_temporary_override(monkeypatch, tmp_path: 
     console, stream = _make_console()
     prompter = ScriptedPrompter(
         answers=[
-            "Continue a saved generation",  # select: main action
-            run_choice,  # select: pick run
-            "Edit defaults before continuing",  # select: resume mode
+            MODE_RESUME,  # main action
+            "Newest first",  # sort order
+            run_line,  # pick run
+            "Edit defaults before continuing",  # resume mode
             "",
             "override/ai",
             "",
@@ -159,12 +172,12 @@ def test_interactive_resume_can_apply_temporary_override(monkeypatch, tmp_path: 
     metadata = load_conversation_metadata(jsonl_path)
     assert metadata["ai_model"] == "override/ai"
     assert metadata["resume_defaults"]["ai_model"] == "test/ai"
-    assert "Saved Generations" in stream.getvalue()
-    assert "120" in stream.getvalue()
+    assert "saved runs" in stream.getvalue()
 
 
 def test_interactive_resume_can_persist_override(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(time, "sleep", lambda _: None)
+    _patch_terminal_width(monkeypatch)
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", output_dir)
@@ -172,7 +185,8 @@ def test_interactive_resume_can_persist_override(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("OPENROUTER_KEY", "interactive-test-key")
 
     jsonl_path = save_conversation(_make_resume_record(), output_dir)
-    run_choice = format_run_choice(scan_saved_conversations(output_dir)[0])
+    summaries = scan_saved_conversations(output_dir)
+    run_line = format_run_line(1, 1, summaries[0], width=120)
     fake = _make_resume_client()
     monkeypatch.setattr("memcomp_bench.cli.OpenRouterClient", lambda key: fake)
 
@@ -181,9 +195,10 @@ def test_interactive_resume_can_persist_override(monkeypatch, tmp_path: Path):
     console, _ = _make_console()
     prompter = ScriptedPrompter(
         answers=[
-            "Continue a saved generation",  # select: main action
-            run_choice,  # select: pick run
-            "Edit defaults before continuing",  # select: resume mode
+            MODE_RESUME,  # main action
+            "Newest first",  # sort order
+            run_line,  # pick run
+            "Edit defaults before continuing",  # resume mode
             "",
             "permanent/ai",
             "",
@@ -222,7 +237,7 @@ def test_interactive_can_start_new_generation(monkeypatch, tmp_path: Path):
     console, _ = _make_console()
     prompter = ScriptedPrompter(
         answers=[
-            "Start a new generation",  # select: main action (no saved runs)
+            MODE_NEW,  # main action (no saved runs)
             "0  Marcus",  # select: profile
             "200",
             "",
@@ -245,3 +260,72 @@ def test_interactive_can_start_new_generation(monkeypatch, tmp_path: Path):
 
     jsonl_files = list(output_dir.glob("*.jsonl"))
     assert jsonl_files
+
+
+def test_interactive_view_mode_shows_details(monkeypatch, tmp_path: Path):
+    _patch_terminal_width(monkeypatch)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", output_dir)
+    monkeypatch.setattr("memcomp_bench.config.ENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("OPENROUTER_KEY", "interactive-test-key")
+
+    save_conversation(_make_resume_record(), output_dir)
+    summaries = scan_saved_conversations(output_dir)
+    run_line = format_run_line(1, 1, summaries[0], width=120)
+
+    from memcomp_bench.cli import cmd_interactive
+
+    console, stream = _make_console()
+    prompter = ScriptedPrompter(
+        answers=[
+            MODE_VIEW,  # main action
+            "Newest first",  # sort order
+            run_line,  # pick run
+            "",  # press enter to return
+            "\u2190 Back",  # back from list
+        ],
+    )
+
+    cmd_interactive(Namespace(), prompter=prompter, console_override=console)
+
+    output = stream.getvalue()
+    assert "Run Details" in output
+    assert "Marcus" in output
+    assert "AI Model" in output
+    assert "Human Simulator" in output
+
+
+def test_interactive_sort_by_tokens(monkeypatch, tmp_path: Path):
+    _patch_terminal_width(monkeypatch)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", output_dir)
+    monkeypatch.setattr("memcomp_bench.config.ENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("OPENROUTER_KEY", "interactive-test-key")
+
+    rec1 = _make_resume_record()
+    rec1.total_tokens_estimate = 500
+    save_conversation(rec1, output_dir)
+
+    rec2 = _make_resume_record()
+    rec2.id = "20260102_000000"
+    rec2.total_tokens_estimate = 200
+    save_conversation(rec2, output_dir)
+
+    from memcomp_bench.cli import cmd_interactive
+
+    console, stream = _make_console()
+    # View mode with "Most tokens" sort, then quit
+    prompter = ScriptedPrompter(
+        answers=[
+            MODE_VIEW,  # main action
+            "Most tokens",  # sort order
+            "\u2190 Back",  # back from list
+        ],
+    )
+
+    cmd_interactive(Namespace(), prompter=prompter, console_override=console)
+
+    output = stream.getvalue()
+    assert "Most tokens" in output

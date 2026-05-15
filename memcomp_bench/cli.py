@@ -246,6 +246,7 @@ def cmd_interactive(
     """Run the prompt-driven interactive benchmark interface."""
     from memcomp_bench.interactive import run_interactive
 
+    ensure_dirs()
     run_interactive(
         cmd_generate,
         cmd_resume,

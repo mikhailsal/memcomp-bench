@@ -12,8 +12,14 @@ from rich.console import Console
 
 from memcomp_bench import _interactive_prompts as prompt_module
 from memcomp_bench import interactive as interactive_module
+from memcomp_bench._interactive_display import format_run_line
 from memcomp_bench.generator import ConversationRecord, ConversationTurn, save_conversation
-from memcomp_bench.interactive import format_run_choice
+from memcomp_bench.interactive import (
+    MODE_NEW,
+    MODE_QUIT,
+    MODE_RESUME,
+    MODE_VIEW,
+)
 from memcomp_bench.model_registry import MISSING
 
 
@@ -99,6 +105,11 @@ def _preset(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+# ---------------------------------------------------------------------------
+# Tests: Prompter implementations
+# ---------------------------------------------------------------------------
 
 
 def test_rich_prompter_uses_defaults_and_retries_confirm(monkeypatch):
@@ -234,19 +245,25 @@ def test_scan_saved_conversations_reads_effective_and_saved_defaults(tmp_path: P
     assert summary.saved_defaults["ai_reasoning"] == {"effort": "high"}
 
 
-def test_run_interactive_resume_flow_calls_handler_with_overrides(tmp_path: Path):
+def test_run_interactive_resume_flow_calls_handler_with_overrides(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("memcomp_bench._interactive_prompts.shutil.get_terminal_size", lambda: (120, 40))
+    monkeypatch.setattr("memcomp_bench._interactive_display.terminal_width", lambda: 120)
+    monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     save_conversation(_make_record(), output_dir)
     summaries = interactive_module.scan_saved_conversations(output_dir)
-    run_choice = format_run_choice(summaries[0])
+
+    # Build a run choice line matching the format_run_line output
+    run_line = format_run_line(1, 1, summaries[0], width=120)
 
     called = {}
     console, stream = _console()
     prompter = ScriptedPrompter(
         [
-            "Continue a saved generation",  # select: main action
-            run_choice,  # select: pick the run
+            MODE_RESUME,  # select: main action
+            "Newest first",  # select: sort order
+            run_line,  # select: pick the run
             "Edit defaults before continuing",  # select: resume mode
             "",  # language override
             "override/ai",  # ai_model override
@@ -278,7 +295,6 @@ def test_run_interactive_resume_flow_calls_handler_with_overrides(tmp_path: Path
     assert args.persist_resume_defaults is False
     assert args.target_tokens == 500
     output = stream.getvalue()
-    assert "Saved Generations" in output
     assert "Target must be greater than 120" in output
 
 
@@ -287,7 +303,7 @@ def test_run_interactive_generate_flow_calls_handler(tmp_path: Path):
     console, stream = _console()
     prompter = ScriptedPrompter(
         [
-            "Start a new generation",  # select: main action (no saved runs)
+            MODE_NEW,  # select: main action (no saved runs)
             "2  James",  # select: profile
             "900",  # target tokens
             "spanish",  # language
@@ -322,17 +338,25 @@ def test_run_interactive_generate_flow_calls_handler(tmp_path: Path):
     assert args.human_provider is None
 
 
-def test_run_interactive_non_resumable_run_does_not_call_handler(tmp_path: Path):
+def test_run_interactive_non_resumable_run_does_not_call_handler(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     jsonl_path = save_conversation(_make_record(), output_dir)
     raw_path = output_dir / f"{jsonl_path.stem}_raw_ai_context.json"
     raw_path.unlink()
     summaries = interactive_module.scan_saved_conversations(output_dir)
+    run_line = format_run_line(1, 1, summaries[0], width=120)
 
     called = {}
     console, stream = _console()
-    prompter = ScriptedPrompter(["Continue a saved generation", format_run_choice(summaries[0])])
+    prompter = ScriptedPrompter(
+        [
+            MODE_RESUME,  # main action
+            "Newest first",  # sort order
+            run_line,  # pick run
+        ]
+    )
 
     interactive_module.run_interactive(
         lambda args: called.setdefault("generate", args),
@@ -352,3 +376,50 @@ def test_default_target_tokens_and_format_value_helpers():
     assert prompt_module.format_value(None) == "-"
     assert prompt_module.format_value("") == "auto"
     assert prompt_module.format_value({"a": 1}) == '{"a": 1}'
+
+
+def test_view_flow_shows_detail_and_returns(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    save_conversation(_make_record(), output_dir)
+    summaries = interactive_module.scan_saved_conversations(output_dir)
+    run_line = format_run_line(1, 1, summaries[0], width=120)
+
+    console, stream = _console()
+    prompter = ScriptedPrompter(
+        [
+            MODE_VIEW,  # main action
+            "Newest first",  # sort order
+            run_line,  # pick run
+            "",  # press Enter to return
+            "\u2190 Back",  # back from list
+        ]
+    )
+
+    interactive_module.run_interactive(
+        lambda args: None,
+        lambda args: None,
+        output_dir=output_dir,
+        console=console,
+        prompter=prompter,
+    )
+
+    output = stream.getvalue()
+    assert "Run Details" in output
+    assert "Marcus" in output
+    assert "AI Model" in output
+    assert "Human Simulator" in output
+
+
+def test_main_actions_with_no_saved_runs(tmp_path: Path):
+    console, stream = _console()
+    prompter = ScriptedPrompter([MODE_QUIT])
+
+    interactive_module.run_interactive(
+        lambda args: None,
+        lambda args: None,
+        output_dir=tmp_path / "empty",
+        console=console,
+        prompter=prompter,
+    )

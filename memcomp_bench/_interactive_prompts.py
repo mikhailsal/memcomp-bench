@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from rich.console import Console
@@ -99,6 +101,128 @@ class QuestionaryPrompter:
         return result if result is not None else (default or choices[0])
 
 
+class TerminalMenuPrompter:
+    """TerminalMenu-backed prompter with search, scroll, and status bar."""
+
+    def ask(self, prompt: str, *, default: str | None = None) -> str:
+        import questionary
+
+        result = questionary.text(prompt, default=default or "").ask()
+        return result if result is not None else (default or "")
+
+    def confirm(self, prompt: str, *, default: bool = False) -> bool:
+        import questionary
+
+        result = questionary.confirm(prompt, default=default).ask()
+        return result if result is not None else default
+
+    def select(self, prompt: str, choices: list[str], *, default: str | None = None) -> str:
+        try:
+            from simple_term_menu import TerminalMenu  # type: ignore[import-untyped]
+        except (ImportError, OSError):
+            return QuestionaryPrompter().select(prompt, choices, default=default)
+
+        cursor_idx = 0
+        if default and default in choices:
+            cursor_idx = choices.index(default)
+
+        try:
+            menu = TerminalMenu(
+                choices,
+                title=f"\n  {prompt}\n",
+                cursor_index=cursor_idx,
+                search_key="/",
+                show_search_hint=True,
+                show_search_hint_text="/ filter",
+                status_bar="  / search | Enter select | Esc back",
+            )
+            chosen = menu.show()
+        except OSError:
+            return QuestionaryPrompter().select(prompt, choices, default=default)
+
+        if chosen is None:
+            return default or choices[0]
+        return choices[chosen]
+
+
+# ---------------------------------------------------------------------------
+# Utilities: relative time, model truncation, language abbreviation, sorting
+# ---------------------------------------------------------------------------
+
+SORT_ORDERS = [
+    "Newest first",
+    "Oldest first",
+    "Most tokens",
+    "Fewest tokens",
+    "Most turns",
+    "By profile (A-Z)",
+]
+
+
+def relative_time(iso_str: str) -> str:
+    """Convert an ISO timestamp string to a human-friendly relative time."""
+    if not iso_str or iso_str == "interrupted":
+        return "-"
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return "-"
+    now = datetime.now(timezone.utc)
+    delta = now - dt
+    seconds = int(delta.total_seconds())
+    if seconds < 0:
+        return "just now"
+    if seconds < 60:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    if days < 30:
+        return f"{days}d ago"
+    months = days // 30
+    return f"{months}mo ago"
+
+
+def truncate_model_name(model_id: str, max_width: int) -> str:
+    """Smart-truncate a model ID: strip provider first, then trim from beginning."""
+    if not model_id or model_id == "-":
+        return "-"
+    if len(model_id) <= max_width:
+        return model_id
+    # Strip provider prefix
+    if "/" in model_id:
+        short = model_id.split("/", 1)[1]
+    else:
+        short = model_id
+    if len(short) <= max_width:
+        return short
+    # Truncate from the beginning
+    if max_width <= 3:
+        return short[-max_width:]
+    return "..." + short[-(max_width - 3) :]
+
+
+def language_abbrev(language: str | None) -> str:
+    """Convert a language name to a 2-letter abbreviation."""
+    if not language:
+        return "--"
+    return language[:2].lower()
+
+
+def terminal_width() -> int:
+    """Get current terminal width."""
+    return shutil.get_terminal_size().columns
+
+
+# ---------------------------------------------------------------------------
+# Prompt helpers (generate / resume flows)
+# ---------------------------------------------------------------------------
+
+
 def prompt_resume_overrides(console: Console, prompter: Prompter, saved_defaults: dict[str, Any]) -> dict[str, Any]:
     """Collect optional resume overrides from interactive prompts."""
     console.print("[dim]Press Enter to keep the saved value. For providers, type 'none' to clear it.[/dim]")
@@ -135,6 +259,7 @@ def prompt_resume_overrides(console: Console, prompter: Prompter, saved_defaults
 def prompt_generate_args(console: Console, prompter: Prompter, *, profile: str = "0") -> argparse.Namespace:
     """Collect arguments for a fresh generation flow."""
     defaults = _default_generate_values()
+    console.print("[dim]Enter to keep default, or type a model ID / value.[/dim]")
     return argparse.Namespace(
         profile=profile,
         target_tokens=_prompt_int(console, prompter, "Target tokens", defaults["target_tokens"]),
@@ -170,6 +295,11 @@ def format_value(value: Any) -> str:
     if value == "":
         return "auto"
     return str(value)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 
 def _default_generate_values() -> dict[str, Any]:

@@ -26,8 +26,7 @@ SEND_MESSAGE_TOOL: dict[str, Any] = {
         "name": "write_message_to_human",
         "description": (
             "Sends your message to the human. This is the ONLY way to communicate "
-            "with them. Everything you write in your regular message content is your "
-            "PRIVATE inner monologue — the human cannot see it. Every call MUST include "
+            "with them. Every call MUST include "
             "your private 'reasoning' first and your visible 'text' second."
         ),
         "parameters": {
@@ -154,7 +153,7 @@ _TOOL_ROLE_SUFFIX = (
     'and how this connects to your evolving identity", "text": "the visible message to the human"}\n\n'
     "Write 'reasoning' FIRST and 'text' SECOND. Think first, then speak. "
     "Do not omit reasoning. Do not put text before reasoning. "
-    "Do not rely on the message content field as a substitute for tool-call reasoning.\n\n"
+    "The tool call itself must carry both fields.\n\n"
     'CORRECT: {"reasoning": "I think about what they said...", "text": "My response"}\n'
     'WRONG: {"text": "My response", "reasoning": "I think about what they said..."}\n\n'
     "The reasoning must genuinely precede your reply — it represents your thought process "
@@ -432,8 +431,7 @@ def extract_tool_call_text(response: Any) -> tuple[str | None, str | None, str |
     """Extract the text, reasoning, and tool call ID from an AI response's tool calls.
     Returns (text, tool_call_id, reasoning) or (None, None, None) if not a write_message_to_human call.
 
-    Reasoning may be passed either in the message content field or inside the tool call's
-    'reasoning' parameter — both options are supported."""
+    The write_message_to_human contract requires reasoning inside the tool call itself."""
     if not response.tool_calls:
         return None, None, None
 

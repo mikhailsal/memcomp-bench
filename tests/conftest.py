@@ -57,6 +57,7 @@ def make_tool_call_response(
     tool_call_id: str = "tc_001",
     *,
     reasoning: str | None = None,
+    include_reasoning: bool = True,
     reasoning_details: list[dict[str, Any]] | None = None,
     finish_reason: str = "tool_calls",
     prompt_tokens: int = 50,
@@ -64,9 +65,12 @@ def make_tool_call_response(
     cost: float = 0.0,
 ) -> LLMResponse:
     """Build an LLMResponse that looks like a write_message_to_human tool call."""
-    args: dict[str, Any] = {"text": text}
-    if reasoning:
-        args["reasoning"] = reasoning
+    if include_reasoning:
+        if reasoning is None:
+            reasoning = "I am composing this message before sending it to the human."
+        args: dict[str, Any] = {"reasoning": reasoning, "text": text}
+    else:
+        args = {"text": text}
     return LLMResponse(
         content=None,
         tool_calls=[

@@ -175,14 +175,14 @@ class TestExtractToolCallText:
                 "id": "tc_1",
                 "function": {
                     "name": "write_message_to_human",
-                    "arguments": json.dumps({"text": "hello"}),
+                    "arguments": json.dumps({"reasoning": "thinking", "text": "hello"}),
                 },
             }
         ]
         text, tc_id, reasoning = extract_tool_call_text(self._make_response(tool_calls=tc))
         assert text == "hello"
         assert tc_id == "tc_1"
-        assert reasoning is None
+        assert reasoning == "thinking"
 
     def test_with_reasoning_in_args(self):
         tc = [
@@ -225,12 +225,13 @@ class TestExtractToolCallText:
                 "id": "tc_5",
                 "function": {
                     "name": "write_message_to_human",
-                    "arguments": json.dumps({"message": "alt key"}),
+                    "arguments": json.dumps({"reasoning": "alt thinking", "message": "alt key"}),
                 },
             }
         ]
-        text, _, _ = extract_tool_call_text(self._make_response(tool_calls=tc))
+        text, _, reasoning = extract_tool_call_text(self._make_response(tool_calls=tc))
         assert text == "alt key"
+        assert reasoning == "alt thinking"
 
 
 # ---------------------------------------------------------------------------
@@ -255,3 +256,11 @@ class TestAIToolsShape:
         prompt = build_ai_system_prompt()
         assert "EVERY write_message_to_human call MUST include BOTH arguments" in prompt
         assert "Do not omit reasoning." in prompt
+
+    def test_system_prompt_does_not_mention_reasoning_elsewhere(self):
+        prompt = build_ai_system_prompt()
+        assert "message content field" not in prompt
+
+    def test_send_message_tool_description_only_mentions_tool_args(self):
+        description = SEND_MESSAGE_TOOL["function"]["description"]
+        assert "regular message content" not in description

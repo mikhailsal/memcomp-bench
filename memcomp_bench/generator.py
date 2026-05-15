@@ -85,6 +85,25 @@ _B3_REFRESH_NOTE = (
 )
 
 
+def _response_is_missing_mandatory_reasoning(tool_calls: list[dict[str, Any]] | None) -> bool:
+    """Return True when write_message_to_human omits the required reasoning argument."""
+    if not tool_calls:
+        return False
+    for tc in tool_calls:
+        func = tc.get("function", {})
+        if func.get("name") != "write_message_to_human":
+            continue
+        args_str = func.get("arguments", "")
+        try:
+            args = json.loads(args_str)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        reasoning = args.get("reasoning")
+        if not isinstance(reasoning, str) or not reasoning.strip():
+            return True
+    return False
+
+
 class ConversationGenerator:
     """Generates a single conversation between a human simulator and an AI companion."""
 
@@ -297,6 +316,10 @@ class ConversationGenerator:
                     visible_text = msg_part
         elif assistant_content:
             return ParsedAIResponse(None, None, None, rejection_reason="no tool call")
+
+        if visible_text and _response_is_missing_mandatory_reasoning(response.tool_calls):
+            console.print("[yellow]AI omitted mandatory reasoning parameter — retrying[/yellow]")
+            return ParsedAIResponse(None, None, None, rejection_reason="missing reasoning")
 
         if visible_text and tool_reasoning and _response_has_text_before_reasoning(response.tool_calls):
             console.print("[yellow]AI wrote text before reasoning \u2014 retrying[/yellow]")

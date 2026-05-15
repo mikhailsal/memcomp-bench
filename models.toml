@@ -6,58 +6,37 @@ human_model = "x-ai/grok-4.1-fast"
 temperature = 1.1
 provider = "auto"
 reasoning = { effort = "minimal", exclude = false, enable = true }
-
-[models."minimax/minimax-m2.7".roles.ai]
-max_tokens = 2048
+roles.ai = { max_tokens = 2048 }
 
 [models."x-ai/grok-4.1-fast"]
 temperature = 0.9
 provider = "auto"
 reasoning = { effort = "minimal", exclude = false, enable = true }
-
-[models."x-ai/grok-4.1-fast".roles.human]
-max_tokens = 180
+roles.human = { max_tokens = 180 }
 
 [models."nvidia/openai/gpt-oss-120b"]
 temperature = 1.1
 provider = "auto"
 reasoning = { effort = "minimal" }
-
-[models."nvidia/openai/gpt-oss-120b".roles.ai]
-max_tokens = 2048
+roles.ai = { max_tokens = 2048 }
 
 [models."google/gemma-4-31b-it:free"]
 provider = "auto"
 reasoning = { effort = "minimal" }
-
-[models."google/gemma-4-31b-it:free".roles.ai]
-temperature = 1.1
-max_tokens = 2048
-
-[models."google/gemma-4-31b-it:free".roles.human]
-temperature = 0.9
-max_tokens = 180
+roles.ai   = { temperature = 1.1, max_tokens = 2048 }
+roles.human = { temperature = 0.9, max_tokens = 180 }
 
 [models."google/gemma-4-26b-a4b-it:free"]
-provider = "google-vertex"
+provider = "ai-studio"
 reasoning = { effort = "minimal", exclude = false, enable = true }
-
-[models."google/gemma-4-26b-a4b-it:free".roles.human]
-temperature = 0.9
-max_tokens = 800
+roles.human = { temperature = 0.9, max_tokens = 800 }
 
 [models."google/gemini-3.1-flash-lite"]
 provider = "google-vertex"
 reasoning = { effort = "minimal", exclude = false, enable = true }
-
-[models."google/gemini-3.1-flash-lite".roles.ai]
-temperature = 1.1
-max_tokens = 2048
+roles.ai = { temperature = 1.1, max_tokens = 2048 }
 
 [models."google/gemini-3.1-flash-lite-preview"]
 provider = "auto"
 reasoning = { effort = "minimal" }
-
-[models."google/gemini-3.1-flash-lite-preview".roles.ai]
-temperature = 1.1
-max_tokens = 2048
+roles.ai = { temperature = 1.1, max_tokens = 2048 }

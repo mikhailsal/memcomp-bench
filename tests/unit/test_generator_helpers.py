@@ -54,11 +54,6 @@ class TestHealToolCallNames:
         assert _heal_tool_call_names(tcs) == 1
         assert tcs[0]["function"]["name"] == "write_message_to_human"
 
-    def test_stop_tool_healed(self):
-        tcs = self._tc("sto/p")
-        assert _heal_tool_call_names(tcs) == 1
-        assert tcs[0]["function"]["name"] == "stop"
-
     def test_none_input(self):
         assert _heal_tool_call_names(None) == 0
 

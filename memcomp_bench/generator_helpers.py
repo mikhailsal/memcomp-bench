@@ -112,7 +112,7 @@ class ConversationRecord:
 
 
 # Valid tool function names defined in AI_TOOLS.
-_KNOWN_TOOL_NAMES = frozenset({"write_message_to_human", "stop"})
+_KNOWN_TOOL_NAMES = frozenset({"write_message_to_human"})
 
 
 def _heal_tool_call_names(

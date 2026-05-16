@@ -210,11 +210,11 @@ class TestExtractToolCallText:
         ]
         assert extract_tool_call_text(self._make_response(tool_calls=tc)) == (None, None, None)
 
-    def test_stop_tool_ignored(self):
+    def test_non_message_tool_ignored(self):
         tc = [
             {
                 "id": "tc_4",
-                "function": {"name": "stop", "arguments": "{}"},
+                "function": {"name": "unknown_tool", "arguments": "{}"},
             }
         ]
         assert extract_tool_call_text(self._make_response(tool_calls=tc)) == (None, None, None)
@@ -240,12 +240,12 @@ class TestExtractToolCallText:
 
 
 class TestAIToolsShape:
-    def test_two_tools_defined(self):
-        assert len(AI_TOOLS) == 2
+    def test_one_tool_defined(self):
+        assert len(AI_TOOLS) == 1
 
     def test_tool_names(self):
         names = {t["function"]["name"] for t in AI_TOOLS}
-        assert names == {"write_message_to_human", "stop"}
+        assert names == {"write_message_to_human"}
 
     def test_send_message_tool_requires_reasoning_before_text(self):
         params = SEND_MESSAGE_TOOL["function"]["parameters"]

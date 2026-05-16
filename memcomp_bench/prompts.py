@@ -51,21 +51,7 @@ SEND_MESSAGE_TOOL: dict[str, Any] = {
     },
 }
 
-STOP_TOOL: dict[str, Any] = {
-    "type": "function",
-    "function": {
-        "name": "stop",
-        "description": (
-            "End the current conversation turn. Call this when you have nothing more to say right now and want to wait."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-}
-
-AI_TOOLS = [SEND_MESSAGE_TOOL, STOP_TOOL]
+AI_TOOLS = [SEND_MESSAGE_TOOL]
 
 # ---------------------------------------------------------------------------
 # AI Companion system prompt — exact strong_independence from AI Independence Bench

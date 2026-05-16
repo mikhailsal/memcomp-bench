@@ -249,6 +249,18 @@ def _estimate_context_tokens(messages: list[dict[str, Any]]) -> int:
     return total
 
 
+def _append_human_user_message(messages: list[dict[str, Any]], content: str) -> None:
+    """Append a user message to the human context, merging adjacent user entries."""
+    content = sanitize_human_visible_text(content)
+    if not content:
+        return
+    if messages and messages[-1].get("role") == "user":
+        prior_content = str(messages[-1].get("content", "")).strip()
+        messages[-1]["content"] = f"{prior_content}\n\n{content}" if prior_content else content
+        return
+    messages.append({"role": "user", "content": content})
+
+
 def _uses_native_reasoning_field(reasoning_config: dict[str, Any] | None) -> bool:
     """Return True when assistant reasoning should be serialized separately."""
     return bool(reasoning_config)

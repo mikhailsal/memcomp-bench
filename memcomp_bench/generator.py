@@ -39,6 +39,7 @@ from memcomp_bench.generator_helpers import (  # noqa: F401
     ConversationRecord,
     ConversationTurn,
     ParsedAIResponse,
+    _append_human_user_message,
     _build_ai_tool_message,
     _enforce_reasoning_before_text,
     _estimate_context_tokens,
@@ -189,7 +190,7 @@ class ConversationGenerator:
         if self._last_human_nudge_turn == turn_number:
             suppression_reason = "already_nudged_this_turn"
         else:
-            self._human_messages.append({"role": "user", "content": content})
+            _append_human_user_message(self._human_messages, content)
             self._last_human_nudge_turn = turn_number
         injected = suppression_reason is None
         self._record_event(
@@ -360,7 +361,7 @@ class ConversationGenerator:
             use_reasoning_field=_uses_native_reasoning_field(self.ai_reasoning),
         )
         self._ai_messages.append(ai_msg)
-        self._human_messages.append({"role": "user", "content": response.visible_text})
+        _append_human_user_message(self._human_messages, response.visible_text or "")
         self._last_tool_call_id = response.tool_call_id
         return response.tool_call_id or ""
 

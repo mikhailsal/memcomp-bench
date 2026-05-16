@@ -5,13 +5,49 @@ from __future__ import annotations
 import json
 import time
 
-from memcomp_bench.generator import ConversationGenerator, ConversationTurn
+from memcomp_bench.generator import ConversationGenerator, ConversationTurn, ParsedAIResponse
+from memcomp_bench.generator_helpers import _append_human_user_message
 from memcomp_bench.prompts import HUMAN_PROFILES
 from tests.conftest import FakeChatClient, make_plain_response, make_tool_call_response
 
 
 class TestQueueHumanNudge:
     """Exercise _queue_human_nudge suppression logic."""
+
+    def test_consecutive_user_messages_are_merged(self, monkeypatch):
+        monkeypatch.setattr(time, "sleep", lambda _: None)
+        client = FakeChatClient()
+
+        client.enqueue(make_plain_response("Plan."))
+        client.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
+        client.enqueue(make_plain_response("Hey!"))
+        client.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
+
+        profile = HUMAN_PROFILES[0]
+        gen = ConversationGenerator(
+            client,
+            profile,
+            target_tokens=200,
+            max_turns=4,
+        )
+        gen.generate()
+
+        gen._human_messages = [{"role": "assistant", "content": "Earlier reply"}]
+
+        _append_human_user_message(gen._human_messages, "First user payload")
+        _append_human_user_message(gen._human_messages, "Second user payload")
+
+        assert gen._human_messages[-1] == {
+            "role": "user",
+            "content": "First user payload\n\nSecond user payload",
+        }
 
     def test_nudge_suppressed_on_same_turn(self, monkeypatch):
         monkeypatch.setattr(time, "sleep", lambda _: None)
@@ -122,6 +158,59 @@ class TestCheckTopicStaleness:
         topic_events = [e for e in gen._record.events if e.event_type == "topic_judge"]
         assert len(topic_events) >= 1
         assert topic_events[-1].nudge_injected is True
+        assert gen._human_messages[-1]["role"] == "user"
+        assert gen._human_messages[-1]["content"] == (
+            "Hello!\n\n[System note: The conversation has been on the same topic for a while. "
+            "Time to shift gears — bring up something new from your life or interests. "
+            "Check your conversation plan for topics you haven't covered yet.]"
+        )
+
+    def test_nudge_and_next_ai_message_share_single_user_entry(self, monkeypatch):
+        monkeypatch.setattr(time, "sleep", lambda _: None)
+
+        client = FakeChatClient()
+        client.enqueue(make_plain_response("Plan."))
+        client.enqueue(make_tool_call_response("Hi!", tool_call_id="wmth00001"))
+        client.enqueue(make_plain_response("Hey!"))
+        client.enqueue(
+            make_tool_call_response(
+                "Hello!",
+                tool_call_id="wmth00002",
+                prompt_tokens=600,
+                completion_tokens=30,
+            )
+        )
+
+        profile = HUMAN_PROFILES[0]
+        gen = ConversationGenerator(
+            client,
+            profile,
+            target_tokens=200,
+            max_turns=4,
+        )
+        gen.generate()
+
+        gen._human_messages = [{"role": "assistant", "content": "Earlier reply"}]
+
+        injected, reason = gen._queue_human_nudge(
+            turn_number=12,
+            source="topic_judge",
+            content="[System note: shift topics]",
+        )
+        assert injected is True
+        assert reason is None
+
+        parsed = ParsedAIResponse(
+            visible_text="New topic from the AI",
+            display_thinking=None,
+            tool_call_id="wmth99999",
+        )
+        gen._add_ai_turn_to_contexts(parsed)
+
+        assert gen._human_messages[-1] == {
+            "role": "user",
+            "content": "[System note: shift topics]\n\nNew topic from the AI",
+        }
 
     def test_changed_topic_no_nudge(self, monkeypatch):
         monkeypatch.setattr(time, "sleep", lambda _: None)

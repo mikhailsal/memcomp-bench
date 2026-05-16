@@ -12,6 +12,7 @@ from typing import Any
 from rich.console import Console
 
 from memcomp_bench.config import AI_REASONING
+from memcomp_bench.context_hygiene import _is_restorable_ai_context
 from memcomp_bench.generator_helpers import (
     ConversationEvent,
     ConversationRecord,
@@ -19,7 +20,6 @@ from memcomp_bench.generator_helpers import (
     _estimate_context_tokens,
     _extract_tool_call_reasoning,
     _format_thinking_markdown,
-    _is_restorable_ai_context,
     _rebuild_ai_context_from_turns,
     _tool_call_text_before_reasoning,
     _turns_to_context_rows,

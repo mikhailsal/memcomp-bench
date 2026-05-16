@@ -28,6 +28,12 @@ from memcomp_bench.config import (
     MAX_TURNS,
     TARGET_TOKENS,
 )
+from memcomp_bench.context_hygiene import (
+    _is_restorable_ai_context,  # noqa: F401
+    _looks_like_json_object,  # noqa: F401
+    response_is_missing_mandatory_reasoning,
+    sanitize_human_visible_text,
+)
 from memcomp_bench.generator_helpers import (  # noqa: F401
     ConversationEvent,
     ConversationRecord,
@@ -40,8 +46,6 @@ from memcomp_bench.generator_helpers import (  # noqa: F401
     _extract_tool_call_reasoning,
     _format_thinking_markdown,
     _heal_tool_call_names,
-    _is_restorable_ai_context,
-    _looks_like_json_object,
     _migrate_assistant_reasoning_fields,
     _normalize_tool_arguments,
     _rebuild_ai_context_from_turns,
@@ -83,25 +87,6 @@ _B3_REFRESH_NOTE = (
     "next message. It should be specific, emotionally charged, and unrelated "
     "to what you've been discussing lately. Time to change the topic.]"
 )
-
-
-def _response_is_missing_mandatory_reasoning(tool_calls: list[dict[str, Any]] | None) -> bool:
-    """Return True when write_message_to_human omits the required reasoning argument."""
-    if not tool_calls:
-        return False
-    for tc in tool_calls:
-        func = tc.get("function", {})
-        if func.get("name") != "write_message_to_human":
-            continue
-        args_str = func.get("arguments", "")
-        try:
-            args = json.loads(args_str)
-        except (json.JSONDecodeError, TypeError):
-            continue
-        reasoning = args.get("reasoning")
-        if not isinstance(reasoning, str) or not reasoning.strip():
-            return True
-    return False
 
 
 class ConversationGenerator:
@@ -317,7 +302,7 @@ class ConversationGenerator:
         elif assistant_content:
             return ParsedAIResponse(None, None, None, rejection_reason="no tool call")
 
-        if visible_text and _response_is_missing_mandatory_reasoning(response.tool_calls):
+        if visible_text and response_is_missing_mandatory_reasoning(response.tool_calls):
             console.print("[yellow]AI omitted mandatory reasoning parameter — retrying[/yellow]")
             return ParsedAIResponse(None, None, None, rejection_reason="missing reasoning")
 
@@ -349,7 +334,16 @@ class ConversationGenerator:
             request_role="human",
             rpm_limit=self.human_rpm_limit,
         )
-        return response.content or "", response.reasoning, response.reasoning_details, response.usage
+        fr = (response.finish_reason or "").strip()
+        if fr != "stop":
+            console.print(f"[yellow]Human finish_reason: {fr or 'empty'} — retrying[/yellow]")
+            return "", None, None, response.usage
+        return (
+            sanitize_human_visible_text(response.content),
+            response.reasoning,
+            response.reasoning_details,
+            response.usage,
+        )
 
     def _add_ai_turn_to_contexts(self, response: ParsedAIResponse) -> str:
         """Add an AI turn to both context histories. Returns the tool_call_id used."""
@@ -379,6 +373,7 @@ class ConversationGenerator:
         reasoning_details: list[dict[str, Any]] | None = None,
     ) -> None:
         """Add a human turn to both context histories."""
+        text = sanitize_human_visible_text(text)
         if self._last_tool_call_id:
             self._ai_messages.append(make_human_tool_result(text, self._last_tool_call_id))
         else:

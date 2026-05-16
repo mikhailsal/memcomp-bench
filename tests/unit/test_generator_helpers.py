@@ -21,6 +21,7 @@ from memcomp_bench.generator import (
     _tool_call_text_before_reasoning,
     _turns_to_context_rows,
     _uses_native_reasoning_field,
+    sanitize_human_visible_text,
 )
 
 
@@ -350,6 +351,34 @@ class TestRebuildAIContext:
         roles = [m["role"] for m in ctx[2:]]
         assert "assistant" in roles
         assert "tool" in roles
+
+    def test_rebuild_sanitizes_human_thinking_tags(self):
+        turns = [
+            {"speaker": "human", "visible_text": "<thought>private</thought>Visible reply"},
+            {
+                "speaker": "ai",
+                "visible_text": "Hello!",
+                "ai_thinking": None,
+                "ai_content": None,
+                "ai_reasoning": None,
+                "ai_tool_calls": None,
+            },
+        ]
+
+        ctx = _rebuild_ai_context_from_turns("System prompt", turns)
+
+        tool_msgs = [msg for msg in ctx if msg.get("role") == "tool"]
+        assert tool_msgs[0]["content"] == "Visible reply"
+
+
+class TestSanitizeHumanVisibleText:
+    def test_strips_hidden_thinking_blocks(self):
+        text = "<thinking>internal</thinking>Hi there"
+        assert sanitize_human_visible_text(text) == "Hi there"
+
+    def test_preserves_visible_text_around_hidden_block(self):
+        text = "Hello <thought>secret</thought> there"
+        assert sanitize_human_visible_text(text) == "Hello there"
 
 
 class TestSplitThinkingAndMessage:

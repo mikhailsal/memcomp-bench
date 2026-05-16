@@ -18,6 +18,7 @@ from memcomp_bench.config import (
     HUMAN_MAX_TOKENS,
     HUMAN_TEMPERATURE,
 )
+from memcomp_bench.context_hygiene import _looks_like_json_object, sanitize_human_visible_text
 from memcomp_bench.openrouter_client import Usage
 from memcomp_bench.prompts import make_human_tool_result
 
@@ -253,11 +254,6 @@ def _uses_native_reasoning_field(reasoning_config: dict[str, Any] | None) -> boo
     return bool(reasoning_config)
 
 
-def _looks_like_json_object(text: str | None) -> bool:
-    """Return True when text appears to be a JSON object payload."""
-    return bool(text and text.lstrip().startswith("{"))
-
-
 def _build_ai_tool_message(
     text: str,
     tool_call_id: str,
@@ -325,15 +321,6 @@ def _migrate_assistant_reasoning_fields(
     return migrated
 
 
-def _is_restorable_ai_context(ai_messages: Any) -> bool:
-    """Return True when saved raw AI context looks usable for resume."""
-    if not isinstance(ai_messages, list) or len(ai_messages) < 3:
-        return False
-    if ai_messages[0].get("role") != "system":
-        return False
-    return any(msg.get("tool_calls") for msg in ai_messages)
-
-
 def _rebuild_ai_context_from_turns(
     ai_system_prompt: str,
     turns: list[dict[str, Any]],
@@ -352,6 +339,7 @@ def _rebuild_ai_context_from_turns(
         speaker = turn["speaker"]
         text = turn["visible_text"]
         if speaker == "human":
+            text = sanitize_human_visible_text(text)
             if last_tool_call_id is None:
                 tool_index += 1
                 last_tool_call_id = f"wmth{tool_index:05d}"

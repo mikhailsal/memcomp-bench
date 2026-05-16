@@ -12,13 +12,13 @@ from memcomp_bench._resume_config import _extract_resume_config
 from memcomp_bench.config import (
     TARGET_TOKENS,
 )
+from memcomp_bench.context_hygiene import _is_restorable_ai_context, sanitize_human_tool_messages
 from memcomp_bench.generator_helpers import (
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,
     _enforce_reasoning_before_text,
     _estimate_context_tokens,
-    _is_restorable_ai_context,
     _migrate_assistant_reasoning_fields,
     _normalize_tool_arguments,
     _rebuild_ai_context_from_turns,
@@ -177,6 +177,10 @@ def _restore_ai_context(jsonl_path: Path, turns: list, cfg: dict) -> list[dict[s
     reordered = _enforce_reasoning_before_text(ai_messages)
     if reordered > 0:
         console.print(f"  [dim]Fixed reasoning/text order in {reordered} tool call(s)[/dim]")
+
+    sanitized = sanitize_human_tool_messages(ai_messages)
+    if sanitized > 0:
+        console.print(f"  [dim]Sanitized {sanitized} human tool message(s) in AI context.[/dim]")
 
     return ai_messages
 

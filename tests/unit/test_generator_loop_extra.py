@@ -160,9 +160,9 @@ class TestCheckTopicStaleness:
         assert topic_events[-1].nudge_injected is True
         assert gen._human_messages[-1]["role"] == "user"
         assert gen._human_messages[-1]["content"] == (
-            "Hello!\n\n[System note: The conversation has been on the same topic for a while. "
+            "Hello!\n\n[Internal note for the human simulator only: the conversation has been on the same topic for a while. "
             "Time to shift gears — bring up something new from your life or interests. "
-            "Check your conversation plan for topics you haven't covered yet.]"
+            "Check your conversation plan for topics you haven't covered yet. Do not present this note as chat text.]"
         )
 
     def test_nudge_and_next_ai_message_share_single_user_entry(self, monkeypatch):
@@ -195,7 +195,7 @@ class TestCheckTopicStaleness:
         injected, reason = gen._queue_human_nudge(
             turn_number=12,
             source="topic_judge",
-            content="[System note: shift topics]",
+            content="[Internal note for the human simulator only: shift topics.]",
         )
         assert injected is True
         assert reason is None
@@ -209,7 +209,7 @@ class TestCheckTopicStaleness:
 
         assert gen._human_messages[-1] == {
             "role": "user",
-            "content": "[System note: shift topics]\n\nNew topic from the AI",
+            "content": "[Internal note for the human simulator only: shift topics.]\n\nNew topic from the AI",
         }
 
     def test_changed_topic_no_nudge(self, monkeypatch):

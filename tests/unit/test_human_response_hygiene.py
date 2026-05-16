@@ -156,3 +156,47 @@ def test_resume_sanitizes_existing_raw_human_tool_messages(monkeypatch, tmp_outp
     tool_messages = [msg for msg in ai_calls[0]["messages"] if msg.get("role") == "tool"]
     assert any(msg.get("content") == "Visible again" for msg in tool_messages)
     assert "<think>" not in json.dumps(ai_calls[0]["messages"])
+
+
+def test_empty_human_retry_merges_internal_note_into_existing_user_prompt(monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    client = FakeChatClient(
+        [
+            make_plain_response("Plan: keep it casual."),
+            make_tool_call_response("Hey there!", tool_call_id="wmth00001"),
+            make_plain_response("Visible first reply", reasoning="complete first try"),
+            make_tool_call_response("Nice to meet you.", tool_call_id="wmth00002"),
+            make_plain_response("", reasoning="empty second try"),
+            make_plain_response("Recovered second reply", reasoning="complete retry"),
+            make_tool_call_response("Thanks for clarifying.", tool_call_id="wmth00003"),
+        ]
+    )
+
+    gen = ConversationGenerator(
+        client,
+        HUMAN_PROFILES[0],
+        target_tokens=150,
+        max_turns=4,
+    )
+
+    with pytest.raises(RuntimeError, match="FakeChatClient: no more queued responses"):
+        gen.generate()
+
+    human_calls = [call for call in client.call_log if call.get("request_role") == "human"]
+    assert len(human_calls) >= 4
+    retry_messages = next(
+        call["messages"]
+        for call in human_calls
+        if any(
+            "Internal note for the human simulator only" in message.get("content", "")
+            for message in call["messages"]
+            if message.get("role") == "user"
+        )
+    )
+    roles = [message["role"] for message in retry_messages]
+    assert all(left != right for left, right in zip(roles, roles[1:]))
+    assert any(
+        "Internal note for the human simulator only" in message.get("content", "")
+        for message in retry_messages
+        if message.get("role") == "user"
+    )

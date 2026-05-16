@@ -17,6 +17,7 @@ from memcomp_bench.generator_helpers import (
     ConversationEvent,
     ConversationRecord,
     ConversationTurn,
+    _append_human_user_message,
     _enforce_reasoning_before_text,
     _estimate_context_tokens,
     _migrate_assistant_reasoning_fields,
@@ -345,9 +346,9 @@ def _rebuild_human_context(gen: Any, turns: list, events: list) -> None:
                 human_msg["reasoning_details"] = h_reasoning_details
             gen._human_messages.append(human_msg)
         else:
-            gen._human_messages.append({"role": "user", "content": text})
+            _append_human_user_message(gen._human_messages, text)
             for note in nudges_by_turn.get(turn_data["turn_number"], []):
-                gen._human_messages.append({"role": "user", "content": note})
+                _append_human_user_message(gen._human_messages, note)
 
 
 def _restore_events_and_turns(gen: Any, events: list, turns: list) -> None:

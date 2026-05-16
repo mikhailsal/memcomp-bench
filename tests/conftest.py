@@ -11,7 +11,13 @@ from typing import Any
 import httpx
 import pytest
 
-from memcomp_bench.openrouter_client import LLMResponse, OpenRouterClient, Usage
+from memcomp_bench.openrouter_client import (
+    LLMResponse,
+    OpenRouterClient,
+    Usage,
+    _should_validate_human_context,
+    validate_human_context_messages,
+)
 
 # ---------------------------------------------------------------------------
 # FakeChatClient — scripted OpenRouterClient for offline tests
@@ -34,6 +40,10 @@ class FakeChatClient(OpenRouterClient):
         self._queue.extend(responses)
 
     def chat(self, **kwargs: Any) -> LLMResponse:
+        messages = kwargs.get("messages", [])
+        request_role = kwargs.get("request_role")
+        if _should_validate_human_context(messages, request_role):
+            validate_human_context_messages(messages)
         self.call_log.append(kwargs)
         if not self._queue:
             raise RuntimeError("FakeChatClient: no more queued responses")

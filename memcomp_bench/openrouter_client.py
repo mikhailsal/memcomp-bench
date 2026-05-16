@@ -12,6 +12,30 @@ import httpx
 from memcomp_bench.config import API_CALL_TIMEOUT, OPENROUTER_BASE_URL
 
 
+def validate_human_context_messages(messages: list[dict[str, Any]]) -> None:
+    """Reject malformed human-side chat histories before sending them upstream."""
+    if not messages:
+        raise ValueError("Human context cannot be empty")
+    if messages[0].get("role") != "system":
+        raise ValueError("Human context must start with a system message")
+    previous_role: str | None = None
+    for index, message in enumerate(messages):
+        role = message.get("role")
+        if role not in {"system", "user", "assistant"}:
+            raise ValueError(f"Human context has invalid role at index {index}: {role!r}")
+        if index and role == "system":
+            raise ValueError("Human context cannot contain non-initial system messages")
+        if previous_role == role:
+            raise ValueError(f"Human context has consecutive {role!r} messages at index {index}")
+        previous_role = role
+
+
+def _should_validate_human_context(messages: list[dict[str, Any]], request_role: str | None) -> bool:
+    if request_role != "human" or not messages:
+        return False
+    return len(messages) > 1 or messages[0].get("role") == "system"
+
+
 @dataclass
 class Usage:
     prompt_tokens: int = 0
@@ -63,6 +87,8 @@ class OpenRouterClient:
         request_role: str | None = None,
         rpm_limit: int | None = None,
     ) -> LLMResponse:
+        if _should_validate_human_context(messages, request_role):
+            validate_human_context_messages(messages)
         payload = self._build_payload(model, messages, max_tokens, temperature, tools, tool_choice, provider, reasoning)
         headers = {
             "Authorization": f"Bearer {self._api_key}",

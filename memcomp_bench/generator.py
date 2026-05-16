@@ -80,16 +80,16 @@ from memcomp_bench.prompts import (
 console = Console()
 _UNSET = object()
 _TOPIC_STALE_NOTE = (
-    "[System note: The conversation has been on the same topic for a while. "
+    "[Internal note for the human simulator only: the conversation has been on the same topic for a while. "
     "Time to shift gears — bring up something new from your life or interests. "
-    "Check your conversation plan for topics you haven't covered yet.]"
+    "Check your conversation plan for topics you haven't covered yet. Do not present this note as chat text.]"
 )
 _B3_REFRESH_NOTE = (
-    "[System note: Something significant happened in your life recently — "
+    "[Internal note for the human simulator only: something significant happened in your life recently — "
     "maybe a work event, a conversation with someone, something you saw or read, "
-    "a mood shift, or a random everyday moment. Bring it up naturally in your "
-    "next message. It should be specific, emotionally charged, and unrelated "
-    "to what you've been discussing lately. Time to change the topic.]"
+    "a mood shift, or a random everyday moment. Bring it up naturally in your next message. "
+    "It should be specific, emotionally charged, and unrelated "
+    "to what you've been discussing lately. Time to change the topic. Do not present this note as chat text.]"
 )
 
 

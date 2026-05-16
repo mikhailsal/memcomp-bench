@@ -12,6 +12,7 @@ from rich.console import Console
 from memcomp_bench.generator_helpers import (
     ConversationRecord,
     ConversationTurn,
+    _append_human_user_message,
     _build_ai_tool_message,
     _estimate_context_tokens,
     _estimate_tokens,
@@ -22,11 +23,11 @@ from memcomp_bench.prompts import make_ai_greeting_turn, reset_tool_call_counter
 console = Console()
 
 _B3_REFRESH_NOTE = (
-    "[System note: Something significant happened in your life recently — "
+    "[Internal note for the human simulator only: something significant happened in your life recently — "
     "maybe a work event, a conversation with someone, something you saw or read, "
     "a mood shift, or a random everyday moment. Bring it up naturally in your "
     "next message. It should be specific, emotionally charged, and unrelated "
-    "to what you've been discussing lately. Time to change the topic.]"
+    "to what you've been discussing lately. Time to change the topic. Do not present this note as chat text.]"
 )
 
 
@@ -309,20 +310,24 @@ def _do_human_turn(
 
 def _retry_empty_human(gen: Any, max_retries: int) -> tuple[str, str | None, list | None]:
     """Retry the human model when it produces an empty response."""
+    retry_note = (
+        "[Internal note for the human simulator only: the AI already sent its most recent message. "
+        "Reply as the human persona, naturally and in your own voice. Do not present this note as chat text.]"
+    )
     for _retry in range(1, max_retries):
         wait = min(2**_retry, 16)
         console.print(
             f"[yellow]Human produced empty response ({_retry}/{max_retries}), retrying in {wait}s with nudge...[/yellow]"
         )
         time.sleep(wait)
-        gen._human_messages.append(
-            {
-                "role": "user",
-                "content": "(The AI just said something. Please respond naturally as yourself \u2014 share your thoughts, tell a story, bring up a new topic, or react to what they said.)",
-            }
-        )
-        human_text, human_reasoning, human_reasoning_details, _ = gen._get_human_response()
-        gen._human_messages.pop(-1)
+        original_messages = gen._human_messages
+        retry_messages = copy.deepcopy(gen._human_messages)
+        _append_human_user_message(retry_messages, retry_note)
+        gen._human_messages = retry_messages
+        try:
+            human_text, human_reasoning, human_reasoning_details, _ = gen._get_human_response()
+        finally:
+            gen._human_messages = original_messages
         if human_text and human_text.strip():
             return human_text, human_reasoning, human_reasoning_details
     console.print("[bold yellow]Human still empty after max retries \u2014 ending conversation.[/bold yellow]")

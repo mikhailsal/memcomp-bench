@@ -18,6 +18,7 @@ from memcomp_bench._interactive_display import (
 from memcomp_bench._interactive_prompts import (
     CANCEL,
     SORT_ACTION,
+    PromptBack,
     Prompter,
     TerminalMenuPrompter,
     default_target_tokens,
@@ -90,8 +91,10 @@ def run_interactive(
             if action == "exit":
                 return
             if action == "resume_last":
-                if latest_resumable and _continue_resume_flow(
-                    active_console, active_prompter, latest_resumable, resume_handler
+                if (
+                    latest_resumable
+                    and _continue_resume_flow(active_console, active_prompter, latest_resumable, resume_handler)
+                    == "resumed"
                 ):
                     return
             elif action == "resume":
@@ -266,15 +269,18 @@ def _continue_resume_flow(
     detail_action = _show_run_detail(prompter, summary)
     if detail_action == "cancel":
         return "back"
-    mode = _prompt_resume_mode(console, prompter)
-    if mode == "cancel":
-        return "cancel"
-    overrides = {} if mode == "saved" else prompt_resume_overrides(console, prompter, summary.saved_defaults)
-    persist_defaults = mode == "edited" and prompter.confirm(
-        "Persist the edited values as future resume defaults?",
-        default=False,
-    )
-    target_tokens = _prompt_target_tokens(console, prompter, summary.total_tokens_estimate)
+    try:
+        mode = _prompt_resume_mode(console, prompter)
+        if mode == "cancel":
+            return "back"
+        overrides = {} if mode == "saved" else prompt_resume_overrides(console, prompter, summary.saved_defaults)
+        persist_defaults = mode == "edited" and prompter.confirm(
+            "Persist the edited values as future resume defaults?",
+            default=False,
+        )
+        target_tokens = _prompt_target_tokens(console, prompter, summary.total_tokens_estimate)
+    except PromptBack:
+        return "back"
     resume_handler(_build_resume_args(summary.jsonl_path, target_tokens, overrides, persist_defaults))
     return "resumed"
 
@@ -298,7 +304,11 @@ def _run_generate_flow(console: Console, prompter: Prompter, generate_handler: A
     if selected == CANCEL:
         return False
     profile_idx = selected.split()[0]
-    generate_handler(prompt_generate_args(console, prompter, profile=profile_idx))
+    try:
+        generate_args = prompt_generate_args(console, prompter, profile=profile_idx)
+    except PromptBack:
+        return False
+    generate_handler(generate_args)
     return True
 
 

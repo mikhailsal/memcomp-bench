@@ -8,8 +8,10 @@ import shutil
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+import questionary
 from rich.console import Console
 
+from memcomp_bench._interactive_questionary import PromptBack, ask_confirm, ask_text
 from memcomp_bench.config import (
     AI_MAX_TOKENS,
     AI_MODEL,
@@ -89,20 +91,12 @@ class QuestionaryPrompter:
     """Arrow-key-navigable prompter backed by questionary."""
 
     def ask(self, prompt: str, *, default: str | None = None) -> str:
-        import questionary
-
-        result = questionary.text(prompt, default=default or "").ask()
-        return result if result is not None else (default or "")
+        return ask_text(prompt, default)
 
     def confirm(self, prompt: str, *, default: bool = False) -> bool:
-        import questionary
-
-        result = questionary.confirm(prompt, default=default).ask()
-        return result if result is not None else default
+        return ask_confirm(prompt, default)
 
     def select(self, prompt: str, choices: list[str], *, default: str | None = None) -> str:
-        import questionary
-
         result = questionary.select(prompt, choices=choices, default=default).ask()
         return result if result is not None else (default or choices[0])
 
@@ -111,20 +105,10 @@ class TerminalMenuPrompter:
     """TerminalMenu-backed prompter with search, scroll, and status bar."""
 
     def ask(self, prompt: str, *, default: str | None = None) -> str:
-        import questionary
-
-        result = questionary.text(prompt, default=default or "").ask()
-        if result is None:
-            raise KeyboardInterrupt
-        return result
+        return ask_text(prompt, default, unsafe=True)
 
     def confirm(self, prompt: str, *, default: bool = False) -> bool:
-        import questionary
-
-        result = questionary.confirm(prompt, default=default).ask()
-        if result is None:
-            raise KeyboardInterrupt
-        return result
+        return ask_confirm(prompt, default, unsafe=True)
 
     def select(self, prompt: str, choices: list[str], *, default: str | None = None) -> str:
         return self.menu(prompt, choices, default=default)[0]
@@ -371,7 +355,11 @@ def _provider_default(value: Any, fallback: Any) -> str | None:
 
 
 def _prompt_choice(console: Console, prompter: Prompter, label: str, choices: list[str], default: str) -> str:
-    return prompter.select(label, choices, default=default)
+    del console
+    result = prompter.select(label, choices, default=default)
+    if result == CANCEL:
+        raise PromptBack
+    return result
 
 
 def _prompt_text(

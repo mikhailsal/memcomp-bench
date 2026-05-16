@@ -179,6 +179,7 @@ def test_run_interactive_resume_flow_calls_handler_with_overrides(tmp_path: Path
 
 
 def test_run_interactive_generate_flow_calls_handler(tmp_path: Path):
+    defaults = prompt_module._default_generate_values()
     called = {}
     console, stream = _console()
     prompter = ScriptedPrompter(
@@ -215,7 +216,7 @@ def test_run_interactive_generate_flow_calls_handler(tmp_path: Path):
     assert args.language == "spanish"
     assert args.verbose is True
     assert args.ai_provider == "openai"
-    assert args.human_provider is None
+    assert args.human_provider == defaults["human_provider"]
 
 
 def test_run_interactive_non_resumable_run_does_not_call_handler(tmp_path: Path, monkeypatch):
@@ -444,3 +445,37 @@ def test_main_loop_returns_to_menu_after_view(tmp_path: Path, monkeypatch):
         console=console,
         prompter=prompter,
     )
+
+
+def test_keyboard_interrupt_from_nested_prompt_exits_cleanly(tmp_path: Path):
+    class InterruptingPrompter:
+        def __init__(self) -> None:
+            self.step = 0
+
+        def select(self, prompt: str, choices: list[str], *, default: str | None = None) -> str:
+            del prompt, choices, default
+            self.step += 1
+            if self.step == 1:
+                return MODE_NEW
+            return "0  Marcus"
+
+        def ask(self, prompt: str, *, default: str | None = None) -> str:
+            del prompt, default
+            raise KeyboardInterrupt
+
+        def confirm(self, prompt: str, *, default: bool = False) -> bool:
+            del prompt, default
+            raise AssertionError("confirm should not be reached")
+
+    called = {}
+    console, _ = _console()
+
+    interactive_module.run_interactive(
+        lambda args: called.setdefault("generate", args),
+        lambda args: called.setdefault("resume", args),
+        output_dir=tmp_path / "empty",
+        console=console,
+        prompter=InterruptingPrompter(),
+    )
+
+    assert called == {}

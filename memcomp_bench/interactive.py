@@ -423,6 +423,6 @@ def _build_resume_args(
         human_max_tokens=overrides.get("human_max_tokens"),
         ai_rpm_limit=overrides.get("ai_rpm_limit"),
         human_rpm_limit=overrides.get("human_rpm_limit"),
-        verbose=False,
+        verbose=True,
         persist_resume_defaults=persist_defaults,
     )

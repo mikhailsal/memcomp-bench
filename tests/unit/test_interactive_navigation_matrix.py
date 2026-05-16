@@ -344,7 +344,7 @@ def test_generate_enter_accepts_default_at_each_stage(stage: str):
         "target_tokens": defaults["target_tokens"],
         "language": defaults["language"],
         "companion_mode": defaults["companion_mode"],
-        "verbose": False,
+        "verbose": True,
         "ai_model": defaults["ai_model"],
         "human_model": defaults["human_model"],
         "ai_provider": defaults["ai_provider"],

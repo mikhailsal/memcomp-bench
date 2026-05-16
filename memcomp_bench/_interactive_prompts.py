@@ -282,7 +282,7 @@ def prompt_generate_args(console: Console, prompter: Prompter, *, profile: str =
         target_tokens=_prompt_int(console, prompter, "Target tokens", defaults["target_tokens"]),
         language=_prompt_text(prompter, "Language", defaults["language"], keep_blank=False),
         companion_mode=_prompt_choice(console, prompter, "Companion mode", ["honest"], defaults["companion_mode"]),
-        verbose=prompter.confirm("Verbose output?", default=False),
+        verbose=prompter.confirm("Verbose output?", default=True),
         ai_model=_prompt_text(prompter, "AI model", defaults["ai_model"], keep_blank=False),
         human_model=_prompt_text(prompter, "Human model", defaults["human_model"], keep_blank=False),
         ai_provider=_prompt_provider(prompter, "AI provider", defaults["ai_provider"], blank_means_none=True),

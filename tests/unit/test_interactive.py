@@ -127,7 +127,10 @@ def test_scan_saved_conversations_reads_effective_and_saved_defaults(tmp_path: P
 
 
 def test_run_interactive_resume_flow_calls_handler_with_overrides(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("memcomp_bench._interactive_prompts.shutil.get_terminal_size", lambda: (120, 40))
+    monkeypatch.setattr(
+        "memcomp_bench._interactive_prompts.shutil.get_terminal_size",
+        lambda *args, **kwargs: (120, 40),
+    )
     monkeypatch.setattr("memcomp_bench._interactive_display.terminal_width", lambda: 120)
     monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
     output_dir = tmp_path / "output"

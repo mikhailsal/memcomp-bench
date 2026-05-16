@@ -297,6 +297,41 @@ def test_prompt_generate_args_uses_resolved_defaults(monkeypatch):
     )
 
 
+def test_prompt_generate_args_defaults_verbose_on(monkeypatch):
+    monkeypatch.setattr(prompt_module, "default_model_for", lambda role: f"default/{role}")
+    monkeypatch.setattr(
+        prompt_module,
+        "resolve_model_preset",
+        lambda model, role: _preset(provider="minimax" if role == "ai" else MISSING, temperature=1.2, max_tokens=512),
+    )
+
+    console, _ = _console()
+    prompter = _ScriptedPrompter(["", "", "honest", "", "", "", "", "", "", "", "", "", ""])
+
+    args = prompt_module.prompt_generate_args(console, prompter)
+
+    assert args.verbose is True
+
+
+def test_prompt_generate_args_allows_disabling_verbose(monkeypatch):
+    monkeypatch.setattr(prompt_module, "default_model_for", lambda role: f"default/{role}")
+    monkeypatch.setattr(
+        prompt_module,
+        "resolve_model_preset",
+        lambda model, role: _preset(provider="minimax" if role == "ai" else MISSING, temperature=1.2, max_tokens=512),
+    )
+
+    console, _ = _console()
+    prompter = _ScriptedPrompter(
+        ["", "", "honest", "", "", "", "", "", "", "", "", "", ""],
+        confirms=[False],
+    )
+
+    args = prompt_module.prompt_generate_args(console, prompter)
+
+    assert args.verbose is False
+
+
 def test_prompt_resume_overrides_parses_special_values_and_retries():
     console, stream = _console()
     prompter = _ScriptedPrompter(

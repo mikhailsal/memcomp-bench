@@ -246,7 +246,12 @@ def _run_resume_flow(
                 sort_order = new_order
                 sorted_runs = sort_summaries(summaries, sort_order)
             continue
-        return _continue_resume_flow(console, prompter, result, resume_handler)
+        action = _continue_resume_flow(console, prompter, result, resume_handler)
+        if action == "resumed":
+            return True
+        if action == "back":
+            continue
+        return False
 
 
 def _continue_resume_flow(
@@ -254,14 +259,16 @@ def _continue_resume_flow(
     prompter: Prompter,
     summary: SavedConversationSummary,
     resume_handler: Any,
-) -> bool:
+) -> str:
     if not summary.resumable:
         console.print("[bold red]Cannot resume: raw AI context file is missing.[/bold red]")
-        return False
-    _show_run_detail(prompter, summary)
+        return "back"
+    detail_action = _show_run_detail(prompter, summary)
+    if detail_action == "cancel":
+        return "back"
     mode = _prompt_resume_mode(console, prompter)
     if mode == "cancel":
-        return False
+        return "cancel"
     overrides = {} if mode == "saved" else prompt_resume_overrides(console, prompter, summary.saved_defaults)
     persist_defaults = mode == "edited" and prompter.confirm(
         "Persist the edited values as future resume defaults?",
@@ -269,7 +276,7 @@ def _continue_resume_flow(
     )
     target_tokens = _prompt_target_tokens(console, prompter, summary.total_tokens_estimate)
     resume_handler(_build_resume_args(summary.jsonl_path, target_tokens, overrides, persist_defaults))
-    return True
+    return "resumed"
 
 
 def _latest_resumable_summary(summaries: list[SavedConversationSummary]) -> SavedConversationSummary | None:
@@ -337,19 +344,25 @@ def _prompt_run_picker(
 
 
 def _show_run_detail(prompter: Prompter, summary: SavedConversationSummary) -> str:
-    """Render run details inside a TerminalMenu. Returns ``"back"``."""
+    """Render run details and report whether the user went back or canceled."""
     detail_lines = render_run_detail_lines(summary)
+    menu = getattr(prompter, "menu", None)
 
-    if isinstance(prompter, TerminalMenuPrompter):
-        prompter.menu(
+    if callable(menu):
+        result, _ = menu(
             f"Run Details: {summary.profile_name}",
             detail_lines,
             status="  j/k scroll | Esc back",
         )
-    else:
-        for line in detail_lines:
-            print(f"  {line}")
-        prompter.select(f"Run Details: {summary.profile_name}", [DETAIL_BACK])
+        if result == CANCEL:
+            return "cancel"
+        return "back"
+
+    for line in detail_lines:
+        print(f"  {line}")
+    result = prompter.select(f"Run Details: {summary.profile_name}", [DETAIL_BACK])
+    if result == CANCEL:
+        return "cancel"
     return "back"
 
 

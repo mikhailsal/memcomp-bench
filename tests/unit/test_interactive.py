@@ -234,7 +234,7 @@ def test_run_interactive_non_resumable_run_does_not_call_handler(tmp_path: Path,
         [
             MODE_RESUME,  # main action
             run_line,  # pick run
-            DETAIL_BACK,  # detail view → back
+            CANCEL,  # Esc from run picker after non-resumable error
             CANCEL,  # Esc from main menu → exit
         ]
     )

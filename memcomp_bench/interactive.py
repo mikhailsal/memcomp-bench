@@ -12,11 +12,12 @@ from rich.console import Console
 
 from memcomp_bench._interactive_display import (
     format_run_line,
-    render_run_detail,
-    render_summary_header,
+    render_run_detail_lines,
+    render_summary_title,
 )
 from memcomp_bench._interactive_prompts import (
-    SORT_ORDERS,
+    CANCEL,
+    SORT_ACTION,
     Prompter,
     TerminalMenuPrompter,
     default_target_tokens,
@@ -31,12 +32,22 @@ from memcomp_bench.persistence import (
 )
 from memcomp_bench.prompts import HUMAN_PROFILES
 
-MODE_NEW = "New generation"
-MODE_RESUME = "Resume a run"
-MODE_VIEW = "View saved runs"
-MODE_QUIT = "Quit"
+SORT_ORDERS = [
+    "[1] Newest first",
+    "[2] Oldest first",
+    "[3] Most tokens",
+    "[4] Fewest tokens",
+    "[5] Most turns",
+    "[6] By profile (A-Z)",
+]
+
+MODE_NEW = "[n] New generation"
+MODE_RESUME = "[r] Resume a run"
+MODE_VIEW = "[v] View saved runs"
+MODE_QUIT = "[q] Quit"
 MAIN_ACTIONS = [MODE_NEW, MODE_RESUME, MODE_VIEW, MODE_QUIT]
-BACK_LABEL = "\u2190 Back"
+
+DETAIL_BACK = "[b] Back to list"  # kept for ScriptedPrompter fallback in tests
 
 
 @dataclass
@@ -66,18 +77,28 @@ def run_interactive(
     console: Console | None = None,
     prompter: Prompter | None = None,
 ) -> None:
-    """Run a single interactive CLI session with three-way mode selection."""
+    """Main-menu loop: sub-flows return here, only Esc/q from main exits."""
     active_console = console or Console()
     active_prompter = prompter or TerminalMenuPrompter()
-    summaries = scan_saved_conversations(output_dir)
 
-    action = _prompt_main_action(active_console, active_prompter, summaries)
-    if action == "resume":
-        _run_resume_flow(active_console, active_prompter, summaries, resume_handler)
-    elif action == "generate":
-        _run_generate_flow(active_console, active_prompter, generate_handler)
-    elif action == "view":
-        _run_view_flow(active_console, active_prompter, summaries)
+    try:
+        while True:
+            summaries = scan_saved_conversations(output_dir)
+            action = _prompt_main_action(active_console, active_prompter, summaries)
+            if action == "exit":
+                return
+            if action == "resume":
+                ran = _run_resume_flow(active_console, active_prompter, summaries, resume_handler)
+                if ran:
+                    return
+            elif action == "generate":
+                ran = _run_generate_flow(active_console, active_prompter, generate_handler)
+                if ran:
+                    return
+            elif action == "view":
+                _run_view_flow(active_console, active_prompter, summaries)
+    except KeyboardInterrupt:
+        return
 
 
 def scan_saved_conversations(output_dir: Path) -> list[SavedConversationSummary]:
@@ -107,33 +128,18 @@ def scan_saved_conversations(output_dir: Path) -> list[SavedConversationSummary]
     return summaries
 
 
-def format_run_choice(summary: SavedConversationSummary) -> str:
-    """Format a saved run as a display string for the selection menu."""
-    ai_model = summary.effective_config.get("ai_model") or "-"
-    human_model = summary.effective_config.get("human_model") or "-"
-    from memcomp_bench._interactive_prompts import truncate_model_name
-
-    ai_short = truncate_model_name(ai_model, 20)
-    hu_short = truncate_model_name(human_model, 20)
-    return (
-        f"{summary.profile_name}  \u2014  {summary.total_tokens_estimate:,} tokens"
-        f"  \u2014  {summary.total_turns} turns  \u2014  {ai_short} / {hu_short}"
-    )
-
-
 def sort_summaries(summaries: list[SavedConversationSummary], order: str) -> list[SavedConversationSummary]:
     """Sort summaries according to the selected sort order."""
-    if order == "Oldest first":
+    if "Oldest first" in order:
         return sorted(summaries, key=lambda s: s.started_at or "")
-    if order == "Most tokens":
+    if "Most tokens" in order:
         return sorted(summaries, key=lambda s: s.total_tokens_estimate, reverse=True)
-    if order == "Fewest tokens":
+    if "Fewest tokens" in order:
         return sorted(summaries, key=lambda s: s.total_tokens_estimate)
-    if order == "Most turns":
+    if "Most turns" in order:
         return sorted(summaries, key=lambda s: s.total_turns, reverse=True)
-    if order == "By profile (A-Z)":
+    if "By profile" in order:
         return sorted(summaries, key=lambda s: s.profile_name.lower())
-    # Default: newest first
     return sorted(summaries, key=lambda s: s.started_at or "", reverse=True)
 
 
@@ -143,16 +149,18 @@ def sort_summaries(summaries: list[SavedConversationSummary], order: str) -> lis
 
 
 def _prompt_main_action(console: Console, prompter: Prompter, summaries: list[SavedConversationSummary]) -> str:
+    choices = MAIN_ACTIONS if summaries else [MODE_NEW, MODE_QUIT]
+    title = "What would you like to do?"
     if summaries:
         total_tokens = sum(s.total_tokens_estimate for s in summaries)
         resumable = sum(1 for s in summaries if s.resumable)
-        console.print(
-            f"\n  [bold]{len(summaries)}[/bold] saved runs "
-            f"| [bold]{total_tokens:,}[/bold] tokens "
-            f"| [bold]{resumable}[/bold] resumable\n"
+        title = (
+            f"{len(summaries)} saved runs | {total_tokens:,} tokens"
+            f" | {resumable} resumable\n\n  What would you like to do?"
         )
-    choices = MAIN_ACTIONS if summaries else [MODE_NEW, MODE_QUIT]
-    result = prompter.select("What would you like to do?", choices)
+    result = prompter.select(title, choices)
+    if result == CANCEL or result == MODE_QUIT:
+        return "exit"
     if result == MODE_RESUME:
         return "resume"
     if result == MODE_NEW:
@@ -175,15 +183,22 @@ def _run_view_flow(
     if not summaries:
         console.print("[yellow]No saved generations found.[/yellow]")
         return
-    sort_order = _prompt_sort_order(prompter)
+    sort_order = "Newest first"
     sorted_runs = sort_summaries(summaries, sort_order)
     while True:
-        render_summary_header(console, sorted_runs, sort_order)
-        summary = _prompt_run_picker(console, prompter, sorted_runs)
-        if summary is None:
+        result = _prompt_run_picker(prompter, sorted_runs, sort_order)
+        if result == CANCEL:
             return
-        render_run_detail(console, summary)
-        prompter.ask("Press Enter to return to list", default="")
+        if result == SORT_ACTION:
+            new_order = _prompt_sort_order(prompter)
+            if new_order != CANCEL:
+                sort_order = new_order
+                sorted_runs = sort_summaries(summaries, sort_order)
+            continue
+        summary = result
+        action = _show_run_detail(prompter, summary)
+        if action == "back":
+            continue
 
 
 # ---------------------------------------------------------------------------
@@ -196,23 +211,32 @@ def _run_resume_flow(
     prompter: Prompter,
     summaries: list[SavedConversationSummary],
     resume_handler: Any,
-) -> None:
+) -> bool:
+    """Returns True if the handler was actually invoked."""
     if not summaries:
         console.print("[yellow]No saved generations were found.[/yellow]")
-        return
-    sort_order = _prompt_sort_order(prompter)
+        return False
+    sort_order = "Newest first"
     sorted_runs = sort_summaries(summaries, sort_order)
-    render_summary_header(console, sorted_runs, sort_order)
-    summary = _prompt_run_picker(console, prompter, sorted_runs)
-    if summary is None:
-        return
+    while True:
+        result = _prompt_run_picker(prompter, sorted_runs, sort_order)
+        if result == CANCEL:
+            return False
+        if result == SORT_ACTION:
+            new_order = _prompt_sort_order(prompter)
+            if new_order != CANCEL:
+                sort_order = new_order
+                sorted_runs = sort_summaries(summaries, sort_order)
+            continue
+        summary = result
+        break
     if not summary.resumable:
         console.print("[bold red]Cannot resume: raw AI context file is missing.[/bold red]")
-        return
-    render_run_detail(console, summary)
+        return False
+    _show_run_detail(prompter, summary)
     mode = _prompt_resume_mode(console, prompter)
     if mode == "cancel":
-        return
+        return False
     overrides = {} if mode == "saved" else prompt_resume_overrides(console, prompter, summary.saved_defaults)
     persist_defaults = mode == "edited" and prompter.confirm(
         "Persist the edited values as future resume defaults?",
@@ -220,6 +244,7 @@ def _run_resume_flow(
     )
     target_tokens = _prompt_target_tokens(console, prompter, summary.total_tokens_estimate)
     resume_handler(_build_resume_args(summary.jsonl_path, target_tokens, overrides, persist_defaults))
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -227,11 +252,15 @@ def _run_resume_flow(
 # ---------------------------------------------------------------------------
 
 
-def _run_generate_flow(console: Console, prompter: Prompter, generate_handler: Any) -> None:
+def _run_generate_flow(console: Console, prompter: Prompter, generate_handler: Any) -> bool:
+    """Returns True if the handler was actually invoked."""
     profile_choices = [f"{i}  {p['name']}" for i, p in enumerate(HUMAN_PROFILES)]
     selected = prompter.select("Select a human profile", profile_choices)
+    if selected == CANCEL:
+        return False
     profile_idx = selected.split()[0]
     generate_handler(prompt_generate_args(console, prompter, profile=profile_idx))
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -244,23 +273,59 @@ def _prompt_sort_order(prompter: Prompter) -> str:
 
 
 def _prompt_run_picker(
-    console: Console,
     prompter: Prompter,
     summaries: list[SavedConversationSummary],
-) -> SavedConversationSummary | None:
+    sort_label: str,
+) -> SavedConversationSummary | str:
+    """Pick a run. Returns a summary, SORT_ACTION, or CANCEL."""
     tw = terminal_width()
     choices = [format_run_line(i + 1, len(summaries), s, tw) for i, s in enumerate(summaries)]
-    choices.append(BACK_LABEL)
-    result = prompter.select("Select a run", choices)
-    if result == BACK_LABEL:
-        return None
+    title = render_summary_title(summaries, sort_label)
+
+    if isinstance(prompter, TerminalMenuPrompter):
+        result, accept_key = prompter.menu(
+            title,
+            choices,
+            extra_accept_keys=("s",),
+        )
+        if result == CANCEL:
+            return CANCEL
+        if accept_key == "s":
+            return SORT_ACTION
+        idx = choices.index(result)
+        return summaries[idx]
+
+    result = prompter.select(title, choices)
+    if result == CANCEL:
+        return CANCEL
+    if result == SORT_ACTION:
+        return SORT_ACTION
     idx = choices.index(result)
     return summaries[idx]
+
+
+def _show_run_detail(prompter: Prompter, summary: SavedConversationSummary) -> str:
+    """Render run details inside a TerminalMenu. Returns ``"back"``."""
+    detail_lines = render_run_detail_lines(summary)
+
+    if isinstance(prompter, TerminalMenuPrompter):
+        prompter.menu(
+            f"Run Details: {summary.profile_name}",
+            detail_lines,
+            status="  j/k scroll | Esc back",
+        )
+    else:
+        for line in detail_lines:
+            print(f"  {line}")
+        prompter.select(f"Run Details: {summary.profile_name}", [DETAIL_BACK])
+    return "back"
 
 
 def _prompt_resume_mode(console: Console, prompter: Prompter) -> str:
     choices = ["Continue with saved defaults", "Edit defaults before continuing", "Cancel"]
     result = prompter.select("How would you like to continue?", choices)
+    if result == CANCEL:
+        return "cancel"
     if result == "Continue with saved defaults":
         return "saved"
     if result == "Edit defaults before continuing":

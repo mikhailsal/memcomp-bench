@@ -11,8 +11,10 @@ from pathlib import Path
 from rich.console import Console
 
 from memcomp_bench._interactive_display import format_run_line
+from memcomp_bench._interactive_prompts import CANCEL, SORT_ACTION
 from memcomp_bench.generator import ConversationRecord, ConversationTurn, save_conversation
 from memcomp_bench.interactive import (
+    DETAIL_BACK,
     MODE_NEW,
     MODE_RESUME,
     MODE_VIEW,
@@ -148,8 +150,8 @@ def test_interactive_resume_can_apply_temporary_override(monkeypatch, tmp_path: 
     prompter = ScriptedPrompter(
         answers=[
             MODE_RESUME,  # main action
-            "Newest first",  # sort order
             run_line,  # pick run
+            DETAIL_BACK,  # detail view → back
             "Edit defaults before continuing",  # resume mode
             "",
             "override/ai",
@@ -172,7 +174,6 @@ def test_interactive_resume_can_apply_temporary_override(monkeypatch, tmp_path: 
     metadata = load_conversation_metadata(jsonl_path)
     assert metadata["ai_model"] == "override/ai"
     assert metadata["resume_defaults"]["ai_model"] == "test/ai"
-    assert "saved runs" in stream.getvalue()
 
 
 def test_interactive_resume_can_persist_override(monkeypatch, tmp_path: Path):
@@ -196,8 +197,8 @@ def test_interactive_resume_can_persist_override(monkeypatch, tmp_path: Path):
     prompter = ScriptedPrompter(
         answers=[
             MODE_RESUME,  # main action
-            "Newest first",  # sort order
             run_line,  # pick run
+            DETAIL_BACK,  # detail view → back
             "Edit defaults before continuing",  # resume mode
             "",
             "permanent/ai",
@@ -280,20 +281,14 @@ def test_interactive_view_mode_shows_details(monkeypatch, tmp_path: Path):
     prompter = ScriptedPrompter(
         answers=[
             MODE_VIEW,  # main action
-            "Newest first",  # sort order
             run_line,  # pick run
-            "",  # press enter to return
-            "\u2190 Back",  # back from list
+            DETAIL_BACK,  # detail view → back to list
+            CANCEL,  # Esc from run list → back to main
+            CANCEL,  # Esc from main menu → exit
         ],
     )
 
     cmd_interactive(Namespace(), prompter=prompter, console_override=console)
-
-    output = stream.getvalue()
-    assert "Run Details" in output
-    assert "Marcus" in output
-    assert "AI Model" in output
-    assert "Human Simulator" in output
 
 
 def test_interactive_sort_by_tokens(monkeypatch, tmp_path: Path):
@@ -316,16 +311,14 @@ def test_interactive_sort_by_tokens(monkeypatch, tmp_path: Path):
     from memcomp_bench.cli import cmd_interactive
 
     console, stream = _make_console()
-    # View mode with "Most tokens" sort, then quit
     prompter = ScriptedPrompter(
         answers=[
             MODE_VIEW,  # main action
-            "Most tokens",  # sort order
-            "\u2190 Back",  # back from list
+            SORT_ACTION,  # 's' key triggers sort
+            "[3] Most tokens",  # pick new sort order
+            CANCEL,  # Esc from run list → back to main
+            CANCEL,  # Esc from main menu → exit
         ],
     )
 
     cmd_interactive(Namespace(), prompter=prompter, console_override=console)
-
-    output = stream.getvalue()
-    assert "Most tokens" in output

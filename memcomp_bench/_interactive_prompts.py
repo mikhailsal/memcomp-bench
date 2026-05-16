@@ -24,6 +24,12 @@ from memcomp_bench.config import (
 )
 from memcomp_bench.model_registry import MISSING, default_model_for, resolve_model_preset
 
+CANCEL = "\x00__CANCEL__"
+"""Sentinel returned by ``select()`` when the user presses Esc."""
+
+SORT_ACTION = "\x00__SORT__"
+"""Sentinel returned by ``select()`` when the user presses ``s`` (sort)."""
+
 
 class Prompter(Protocol):
     """Typed prompt interface so tests can script interactive flows."""
@@ -108,55 +114,82 @@ class TerminalMenuPrompter:
         import questionary
 
         result = questionary.text(prompt, default=default or "").ask()
-        return result if result is not None else (default or "")
+        if result is None:
+            raise KeyboardInterrupt
+        return result
 
     def confirm(self, prompt: str, *, default: bool = False) -> bool:
         import questionary
 
         result = questionary.confirm(prompt, default=default).ask()
-        return result if result is not None else default
+        if result is None:
+            raise KeyboardInterrupt
+        return result
 
     def select(self, prompt: str, choices: list[str], *, default: str | None = None) -> str:
+        return self.menu(prompt, choices, default=default)[0]
+
+    def menu(
+        self,
+        prompt: str,
+        choices: list[str],
+        *,
+        default: str | None = None,
+        extra_accept_keys: tuple[str, ...] = (),
+        status: str | None = None,
+        skip_indices: list[int] | None = None,
+    ) -> tuple[str, str | None]:
+        """Show a TerminalMenu. Returns ``(chosen_entry_or_CANCEL, accept_key)``."""
         try:
             from simple_term_menu import TerminalMenu  # type: ignore[import-untyped]
         except (ImportError, OSError):
-            return QuestionaryPrompter().select(prompt, choices, default=default)
+            return QuestionaryPrompter().select(prompt, choices, default=default), "enter"
 
         cursor_idx = 0
         if default and default in choices:
             cursor_idx = choices.index(default)
 
+        searchable = len(choices) > 8
+        accept = ("enter",) + extra_accept_keys
+        if status is None:
+            parts = []
+            if searchable:
+                parts.append("/ search")
+            for key in extra_accept_keys:
+                if key == "s":
+                    parts.append("s sort")
+            parts.extend(["Enter select", "Esc back"])
+            status = "  " + " | ".join(parts)
+
         try:
-            menu = TerminalMenu(
+            tm = TerminalMenu(
                 choices,
                 title=f"\n  {prompt}\n",
                 cursor_index=cursor_idx,
+                accept_keys=accept,
+                quit_keys=("escape",),
                 search_key="/",
-                show_search_hint=True,
-                show_search_hint_text="/ filter",
-                status_bar="  / search | Enter select | Esc back",
+                show_search_hint=False,
+                status_bar=status,
+                clear_screen=True,
+                menu_cursor="  ",
+                menu_highlight_style=("fg_cyan", "bold"),
+                skip_empty_entries=True,
             )
-            chosen = menu.show()
+            if skip_indices:
+                tm._skip_indices = skip_indices
+            chosen = tm.show()
         except OSError:
-            return QuestionaryPrompter().select(prompt, choices, default=default)
+            return QuestionaryPrompter().select(prompt, choices, default=default), "enter"
 
         if chosen is None:
-            return default or choices[0]
-        return choices[chosen]
+            return CANCEL, None
+        return choices[chosen], tm.chosen_accept_key
 
 
 # ---------------------------------------------------------------------------
 # Utilities: relative time, model truncation, language abbreviation, sorting
 # ---------------------------------------------------------------------------
-
-SORT_ORDERS = [
-    "Newest first",
-    "Oldest first",
-    "Most tokens",
-    "Fewest tokens",
-    "Most turns",
-    "By profile (A-Z)",
-]
 
 
 def relative_time(iso_str: str) -> str:

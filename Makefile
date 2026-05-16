@@ -54,7 +54,7 @@ profiles: ## List available human profiles
 # Tests
 # ---------------------------------------------------------------------------
 
-.PHONY: test test-unit test-functional test-live test-network test-all
+.PHONY: test test-unit test-functional test-pty test-live test-network test-all
 
 test: test-unit test-functional ## Run offline tests (unit + functional interactive coverage)
 
@@ -62,7 +62,10 @@ test-unit: ## Run unit tests only
 	$(PYTEST) tests/unit/ $(ARGS)
 
 test-functional: ## Run offline functional CLI tests
-	$(PYTEST) tests/functional/ $(ARGS)
+	$(PYTEST) tests/functional/ -m "not pty" $(ARGS)
+
+test-pty: ## Run PTY-based interactive TUI tests (requires real TTY + pexpect)
+	$(PYTEST) -m pty tests/functional/ $(ARGS)
 
 test-live: ## Run live proxy tests   (requires local AI proxy)
 	MEMCOMP_BENCH_LIVE=1 $(PYTEST) -m live tests/live/ $(ARGS)

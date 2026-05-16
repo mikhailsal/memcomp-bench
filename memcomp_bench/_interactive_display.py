@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
-from rich.panel import Panel
 
 from memcomp_bench._interactive_prompts import (
     format_value,
@@ -16,6 +15,13 @@ from memcomp_bench._interactive_prompts import (
     terminal_width,
     truncate_model_name,
 )
+
+__all__ = [
+    "format_run_line",
+    "render_run_detail_lines",
+    "render_summary_header",
+    "render_summary_title",
+]
 
 
 def format_run_line(index: int, total: int, summary: Any, width: int | None = None) -> str:
@@ -54,78 +60,74 @@ def render_summary_header(console: Console, summaries: list[Any], sort_label: st
     total_tokens = sum(s.total_tokens_estimate for s in summaries)
     resumable = sum(1 for s in summaries if s.resumable)
     tokens_display = f"{total_tokens:,}"
+    display_label = sort_label
+    if display_label.startswith("["):
+        display_label = display_label.split("] ", 1)[-1]
     console.print(
         f"  [bold]{len(summaries)}[/bold] saved runs "
         f"| [bold]{tokens_display}[/bold] total tokens "
         f"| [bold]{resumable}[/bold] resumable "
-        f"| sorted: [dim]{sort_label}[/dim]"
+        f"| sorted: [dim]{display_label}[/dim]"
     )
 
 
-def render_run_detail(console: Console, summary: Any) -> None:
-    """Render a comprehensive detail panel for a single run."""
-    tw = terminal_width()
-    panel_width = min(tw - 4, 100)
-
-    sections: list[str] = []
-    sections.append(_section_general(summary))
-    sections.append(_section_conversation(summary))
-    sections.append(_section_ai_model(summary))
-    sections.append(_section_human_model(summary))
-
+def render_run_detail_lines(summary: Any) -> list[str]:
+    """Return plain-text lines for use as TerminalMenu entries (no Rich markup)."""
+    lines: list[str] = []
+    lines.extend(_plain_section_general(summary))
+    lines.extend(_plain_section_conversation(summary))
+    lines.extend(_plain_section_ai_model(summary))
+    lines.extend(_plain_section_human_model(summary))
     if summary.saved_defaults != summary.effective_config:
-        sections.append(_section_resume_defaults(summary))
-
-    body = "\n".join(sections)
-    panel = Panel(
-        body,
-        title=f"Run Details: {summary.profile_name}",
-        width=panel_width,
-        padding=(1, 2),
-    )
-    console.print(panel)
+        lines.extend(_plain_section_resume_defaults(summary))
+    return lines
 
 
-def _section_general(summary: Any) -> str:
-    """Build the General section of the detail panel."""
+def render_summary_title(summaries: list[Any], sort_label: str) -> str:
+    """Return a compact title string for the run-list menu."""
+    total_tokens = sum(s.total_tokens_estimate for s in summaries)
+    resumable = sum(1 for s in summaries if s.resumable)
+    display_label = sort_label
+    if display_label.startswith("["):
+        display_label = display_label.split("] ", 1)[-1]
+    return f"{len(summaries)} runs | {total_tokens:,} tokens | {resumable} resumable | sorted: {display_label}"
+
+
+def _plain_section_general(summary: Any) -> list[str]:
     file_size = _file_size_str(summary.jsonl_path)
     started_rel = relative_time(summary.started_at) if summary.started_at else "-"
     finished_rel = relative_time(summary.finished_at) if summary.finished_at else "-"
     duration = _duration_str(summary.started_at, summary.finished_at)
     status = "Ready to resume" if summary.resumable else "Missing raw context"
-    lines = [
-        "[bold]General[/bold]",
+    return [
+        "--- General ---",
         f"  File:      {summary.jsonl_path.name}  ({file_size})",
         f"  Started:   {summary.started_at or '-'}  ({started_rel})",
         f"  Finished:  {summary.finished_at or '-'}  (duration: {duration})",
         f"  Status:    {status}",
     ]
-    return "\n".join(lines)
 
 
-def _section_conversation(summary: Any) -> str:
-    """Build the Conversation section of the detail panel."""
+def _plain_section_conversation(summary: Any) -> list[str]:
     cost = summary.effective_config.get("total_cost_usd")
     cost_str = f"${cost:.4f}" if cost else "-"
     lang = summary.effective_config.get("language", "-")
-    lines = [
+    return [
         "",
-        "[bold]Conversation[/bold]",
+        "--- Conversation ---",
         f"  Profile:   {summary.profile_name}",
         f"  Language:  {lang}",
         f"  Tokens:    {summary.total_tokens_estimate:,}",
         f"  Turns:     {summary.total_turns}",
         f"  Cost:      {cost_str}",
     ]
-    return "\n".join(lines)
 
 
-def _section_ai_model(summary: Any) -> str:
-    """Build the AI Model section of the detail panel."""
+def _plain_section_ai_model(summary: Any) -> list[str]:
     cfg = summary.effective_config
-    lines = [
+    return [
         "",
-        "[bold]AI Model[/bold]",
+        "--- AI Model ---",
         f"  Model:       {format_value(cfg.get('ai_model'))}",
         f"  Provider:    {format_value(cfg.get('ai_provider'))}",
         f"  Temperature: {format_value(cfg.get('ai_temperature'))}",
@@ -133,15 +135,13 @@ def _section_ai_model(summary: Any) -> str:
         f"  RPM limit:   {format_value(cfg.get('ai_rpm_limit'))}",
         f"  Reasoning:   {format_value(cfg.get('ai_reasoning'))}",
     ]
-    return "\n".join(lines)
 
 
-def _section_human_model(summary: Any) -> str:
-    """Build the Human Simulator section of the detail panel."""
+def _plain_section_human_model(summary: Any) -> list[str]:
     cfg = summary.effective_config
-    lines = [
+    return [
         "",
-        "[bold]Human Simulator[/bold]",
+        "--- Human Simulator ---",
         f"  Model:       {format_value(cfg.get('human_model'))}",
         f"  Provider:    {format_value(cfg.get('human_provider'))}",
         f"  Temperature: {format_value(cfg.get('human_temperature'))}",
@@ -149,14 +149,12 @@ def _section_human_model(summary: Any) -> str:
         f"  RPM limit:   {format_value(cfg.get('human_rpm_limit'))}",
         f"  Reasoning:   {format_value(cfg.get('human_reasoning'))}",
     ]
-    return "\n".join(lines)
 
 
-def _section_resume_defaults(summary: Any) -> str:
-    """Build the Resume Defaults section (only shown when different from effective)."""
+def _plain_section_resume_defaults(summary: Any) -> list[str]:
     sd = summary.saved_defaults
     ec = summary.effective_config
-    lines = ["", "[bold]Resume Defaults[/bold] [dim](differs from last run)[/dim]"]
+    lines = ["", "--- Resume Defaults (differs from last run) ---"]
     for key in (
         "ai_model",
         "human_model",
@@ -176,8 +174,8 @@ def _section_resume_defaults(summary: Any) -> str:
         effective_val = ec.get(key)
         if saved_val != effective_val:
             label = key.replace("_", " ").title()
-            lines.append(f"  {label}: {format_value(saved_val)}  [dim](was: {format_value(effective_val)})[/dim]")
-    return "\n".join(lines)
+            lines.append(f"  {label}: {format_value(saved_val)}  (was: {format_value(effective_val)})")
+    return lines
 
 
 def _file_size_str(path: Path) -> str:

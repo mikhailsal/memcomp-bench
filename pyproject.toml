@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    "pexpect>=4.9",
     "pytest>=8",
     "pytest-cov>=5",
 ]
@@ -32,6 +33,7 @@ testpaths = ["tests"]
 markers = [
     "live: end-to-end tests that hit the local AI proxy (require MEMCOMP_BENCH_LIVE=1)",
     "network: tests that reach the public OpenRouter /models endpoint (require MEMCOMP_BENCH_NETWORK=1)",
+    "pty: functional tests that require a real TTY (use pexpect to drive the interactive TUI)",
 ]
 
 # ---------------------------------------------------------------------------

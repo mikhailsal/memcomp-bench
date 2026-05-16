@@ -129,12 +129,14 @@ The interactive mode presents a three-way mode selector on launch:
 | View saved runs | `v` | Browse and inspect runs without modifying anything |
 | Quit | `q` | Exit |
 
-**Navigation:** fully operable via arrows + Enter + Escape, or via single-key hotkeys for power users.
+**Navigation:** fully operable via arrows + Enter + Escape (or `j`/`k`/Enter/Esc for power users). Escape is a universal "go back" — pressing Esc from the main menu exits the application; pressing it from any sub-menu returns to the parent. Ctrl-C exits cleanly from anywhere without a traceback.
+
+**Full-screen rendering:** the TUI uses the alternate screen buffer (like vim, htop, or mc), taking over the entire terminal while active and restoring the previous screen on exit.
 
 **Run list features:**
 - Multi-column display showing profile, tokens, turns, language (2-letter), AI model, human model, and relative age
-- Sortable: newest/oldest, most/fewest tokens, most turns, by profile name (A-Z)
-- Searchable: press `/` for incremental filter across all columns
+- Sorted by "Newest first" by default — change via the inline `[s] Change sort order...` option (sorting is optional, not a mandatory first step)
+- Searchable: press `/` for incremental filter (only shown on long lists with >8 items)
 - Terminal-size adaptive: columns adjust or hide based on available width
 - Smart model name truncation: strips provider prefix first, then trims from the beginning preserving the version suffix
 
@@ -142,7 +144,7 @@ The interactive mode presents a three-way mode selector on launch:
 
 **Model entry:** when starting a new generation, AI and human models show the resolved default from `models.toml` and accept any model ID via free-text entry.
 
-**Status bar:** always visible at the bottom showing available keybindings for the current context.
+**Status bar:** always visible at the bottom showing context-appropriate keybindings (`Enter select | Esc back` on short menus, `/ search | Enter select | Esc back` on searchable lists).
 
 **Reformat** the markdown file (useful after render logic updates):
 
@@ -228,6 +230,7 @@ memcomp_bench/
 ```bash
 make test              # offline tests: unit + functional interactive coverage
 make test-functional   # offline functional CLI coverage
+make test-pty          # PTY-based interactive TUI tests (requires real TTY + pexpect)
 make test-live         # requires a local AI proxy (MEMCOMP_BENCH_LIVE=1)
 make test-network      # hits the public OpenRouter API (MEMCOMP_BENCH_NETWORK=1)
 make test-all          # everything
@@ -238,6 +241,8 @@ make typecheck         # mypy
 make format            # auto-format with ruff
 make check             # lint + typecheck + unit tests
 ```
+
+The PTY tests use `pexpect` to spawn the actual CLI in a pseudo-terminal and verify real keyboard interaction (Esc exits, Ctrl-C exits cleanly, navigation works). They are marked with `@pytest.mark.pty` and excluded from the regular `test-functional` target since they require a real TTY.
 
 Pre-commit hooks enforce formatting, linting, file/function length limits (500/65 lines), and coverage:
 

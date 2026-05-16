@@ -316,7 +316,8 @@ def prompt_generate_args(console: Console, prompter: Prompter, *, profile: str =
 
 def default_target_tokens(current_tokens: int) -> int:
     """Return the suggested continuation target token count."""
-    return max(TARGET_TOKENS, current_tokens + 5_000)
+    suggested = current_tokens + 5_000
+    return ((suggested + 2_500) // 5_000) * 5_000
 
 
 def format_value(value: Any) -> str:

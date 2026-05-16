@@ -223,6 +223,42 @@ def test_interactive_resume_can_persist_override(monkeypatch, tmp_path: Path):
     assert metadata["resume_defaults"]["ai_model"] == "permanent/ai"
 
 
+def test_interactive_resume_uses_rounded_default_target(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    record = _make_resume_record()
+    record.total_tokens_estimate = 21_463
+    save_conversation(record, output_dir)
+    summaries = scan_saved_conversations(output_dir)
+    run_line = format_run_line(1, 1, summaries[0], width=120)
+
+    called = {}
+    console, _ = _make_console()
+    prompter = ScriptedPrompter(
+        answers=[
+            MODE_RESUME,
+            run_line,
+            DETAIL_BACK,
+            "Continue with saved defaults",
+            "",
+        ],
+    )
+
+    from memcomp_bench import interactive as interactive_module
+
+    interactive_module.run_interactive(
+        lambda args: called.setdefault("generate", args),
+        lambda args: called.setdefault("resume", args),
+        output_dir=output_dir,
+        console=console,
+        prompter=prompter,
+    )
+
+    assert called["resume"].target_tokens == 25_000
+
+
 def test_interactive_can_start_new_generation(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(time, "sleep", lambda _: None)
     output_dir = tmp_path / "output"

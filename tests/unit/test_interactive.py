@@ -252,11 +252,33 @@ def test_run_interactive_non_resumable_run_does_not_call_handler(tmp_path: Path,
 
 
 def test_default_target_tokens_and_format_value_helpers():
-    assert prompt_module.default_target_tokens(120) == 70_000
+    assert prompt_module.default_target_tokens(120) == 5_000
     assert prompt_module.default_target_tokens(80_000) == 85_000
+    assert prompt_module.default_target_tokens(21_463) == 25_000
+    assert prompt_module.default_target_tokens(22_500) == 30_000
     assert prompt_module.format_value(None) == "-"
     assert prompt_module.format_value("") == "auto"
     assert prompt_module.format_value({"a": 1}) == '{"a": 1}'
+
+
+def test_prompt_target_tokens_uses_rounded_default(monkeypatch):
+    monkeypatch.setattr("memcomp_bench.interactive.default_target_tokens", lambda current_tokens: 25_000)
+    console, _ = _console()
+
+    class DefaultOnlyPrompter:
+        def __init__(self) -> None:
+            self.default: str | None = None
+
+        def ask(self, prompt: str, *, default: str | None = None) -> str:
+            self.default = default
+            return default or ""
+
+    prompter = DefaultOnlyPrompter()
+
+    target_tokens = interactive_module._prompt_target_tokens(console, prompter, 21_463)
+
+    assert prompter.default == "25000"
+    assert target_tokens == 25_000
 
 
 def test_view_flow_shows_detail_and_returns(tmp_path: Path, monkeypatch):

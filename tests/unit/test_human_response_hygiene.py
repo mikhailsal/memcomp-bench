@@ -35,9 +35,42 @@ def test_generate_strips_human_thinking_tags_before_recording_and_forwarding(mon
     record = gen.generate()
 
     assert record.turns[0].visible_text == "Visible reply"
+    assert record.turns[0].human_reasoning == "private notes"
     tool_messages = [msg for msg in gen._ai_messages if msg.get("role") == "tool"]
     assert tool_messages[0]["content"] == "Visible reply"
     assert "private notes" not in json.dumps(gen._ai_messages)
+
+
+def test_generate_merges_native_and_tagged_human_reasoning_into_history_and_markdown(monkeypatch, tmp_output_dir: Path):
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    client = FakeChatClient(
+        [
+            make_plain_response("Plan: keep it casual."),
+            make_tool_call_response("Hey there!", tool_call_id="wmth00001"),
+            make_plain_response(
+                "<think>tagged reasoning</think>Visible reply",
+                reasoning="native reasoning",
+            ),
+            make_tool_call_response("Nice to meet you.", tool_call_id="wmth00002"),
+        ]
+    )
+
+    gen = ConversationGenerator(
+        client,
+        HUMAN_PROFILES[0],
+        target_tokens=80,
+        max_turns=2,
+    )
+    record = gen.generate()
+    jsonl_path = save_conversation(record, tmp_output_dir)
+    md_path = tmp_output_dir / f"{jsonl_path.stem}.md"
+    markdown = md_path.read_text()
+
+    assert record.turns[0].human_reasoning == "native reasoning\n\ntagged reasoning"
+    assert record.turns[0].visible_text == "Visible reply"
+    assert "native reasoning" in markdown
+    assert "tagged reasoning" in markdown
+    assert "<think>" not in markdown
 
 
 def test_generate_retries_human_non_stop_finish_reason(monkeypatch):

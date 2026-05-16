@@ -7,27 +7,63 @@ import re
 from typing import Any
 
 _HUMAN_HIDDEN_TAG_BLOCK_RE = re.compile(
-    r"<\s*(?P<tag>thoughts?|think(?:ing)?)\b[^>]*>.*?</\s*(?P=tag)\s*>",
+    r"<\s*(?P<tag>thoughts?|think(?:ing)?)\b[^>]*>(?P<body>.*?)</\s*(?P=tag)\s*>",
     re.IGNORECASE | re.DOTALL,
 )
 
 
-def sanitize_human_visible_text(text: str | None) -> str:
-    """Strip hidden thinking blocks from human-visible text before AI sees it."""
+def _normalize_human_text(text: str) -> str:
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def extract_human_thinking(text: str | None) -> tuple[str, str | None]:
+    """Split hidden tagged thoughts from visible human text."""
     if not text:
-        return ""
+        return "", None
 
     cleaned = text
+    thoughts: list[str] = []
     while True:
-        updated = _HUMAN_HIDDEN_TAG_BLOCK_RE.sub(" ", cleaned)
-        if updated == cleaned:
-            break
-        cleaned = updated
+        matched = False
 
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    cleaned = re.sub(r"[ \t]*\n[ \t]*", "\n", cleaned)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
+        def _replace(match: re.Match[str]) -> str:
+            nonlocal matched
+            matched = True
+            body = _normalize_human_text(match.group("body"))
+            if body:
+                thoughts.append(body)
+            return " "
+
+        updated = _HUMAN_HIDDEN_TAG_BLOCK_RE.sub(_replace, cleaned)
+        cleaned = updated
+        if not matched:
+            break
+
+    visible_text = _normalize_human_text(cleaned)
+    hidden_reasoning = "\n\n".join(part for part in thoughts if part) or None
+    return visible_text, hidden_reasoning
+
+
+def merge_human_reasoning(*parts: str | None) -> str | None:
+    """Combine reasoning fragments while preserving order and removing duplicates."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        normalized = _normalize_human_text(part or "")
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        merged.append(normalized)
+    return "\n\n".join(merged) or None
+
+
+def sanitize_human_visible_text(text: str | None) -> str:
+    """Strip hidden thinking blocks from human-visible text before AI sees it."""
+    visible_text, _ = extract_human_thinking(text)
+    return visible_text
 
 
 def sanitize_human_tool_messages(ai_messages: list[dict[str, Any]]) -> int:

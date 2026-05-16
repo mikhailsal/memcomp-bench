@@ -31,6 +31,8 @@ from memcomp_bench.config import (
 from memcomp_bench.context_hygiene import (
     _is_restorable_ai_context,  # noqa: F401
     _looks_like_json_object,  # noqa: F401
+    extract_human_thinking,
+    merge_human_reasoning,
     response_is_missing_mandatory_reasoning,
     sanitize_human_visible_text,
 )
@@ -339,9 +341,10 @@ class ConversationGenerator:
         if fr != "stop":
             console.print(f"[yellow]Human finish_reason: {fr or 'empty'} — retrying[/yellow]")
             return "", None, None, response.usage
+        visible_text, tagged_reasoning = extract_human_thinking(response.content)
         return (
-            sanitize_human_visible_text(response.content),
-            response.reasoning,
+            visible_text,
+            merge_human_reasoning(response.reasoning, tagged_reasoning),
             response.reasoning_details,
             response.usage,
         )

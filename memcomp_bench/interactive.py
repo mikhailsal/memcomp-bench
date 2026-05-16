@@ -42,10 +42,11 @@ SORT_ORDERS = [
 ]
 
 MODE_NEW = "[n] New generation"
+MODE_RESUME_LAST = "[l] Resume last generation"
 MODE_RESUME = "[r] Resume a run"
 MODE_VIEW = "[v] View saved runs"
 MODE_QUIT = "[q] Quit"
-MAIN_ACTIONS = [MODE_NEW, MODE_RESUME, MODE_VIEW, MODE_QUIT]
+MAIN_ACTIONS = [MODE_NEW, MODE_RESUME_LAST, MODE_RESUME, MODE_VIEW, MODE_QUIT]
 
 DETAIL_BACK = "[b] Back to list"  # kept for ScriptedPrompter fallback in tests
 
@@ -84,10 +85,16 @@ def run_interactive(
     try:
         while True:
             summaries = scan_saved_conversations(output_dir)
-            action = _prompt_main_action(active_console, active_prompter, summaries)
+            latest_resumable = _latest_resumable_summary(summaries)
+            action = _prompt_main_action(active_console, active_prompter, summaries, latest_resumable is not None)
             if action == "exit":
                 return
-            if action == "resume":
+            if action == "resume_last":
+                if latest_resumable and _continue_resume_flow(
+                    active_console, active_prompter, latest_resumable, resume_handler
+                ):
+                    return
+            elif action == "resume":
                 ran = _run_resume_flow(active_console, active_prompter, summaries, resume_handler)
                 if ran:
                     return
@@ -148,8 +155,17 @@ def sort_summaries(summaries: list[SavedConversationSummary], order: str) -> lis
 # ---------------------------------------------------------------------------
 
 
-def _prompt_main_action(console: Console, prompter: Prompter, summaries: list[SavedConversationSummary]) -> str:
-    choices = MAIN_ACTIONS if summaries else [MODE_NEW, MODE_QUIT]
+def _prompt_main_action(
+    console: Console,
+    prompter: Prompter,
+    summaries: list[SavedConversationSummary],
+    has_resumable: bool,
+) -> str:
+    choices = [MODE_NEW, MODE_QUIT]
+    if summaries:
+        choices = [MODE_NEW, MODE_RESUME, MODE_VIEW, MODE_QUIT]
+        if has_resumable:
+            choices.insert(1, MODE_RESUME_LAST)
     title = "What would you like to do?"
     if summaries:
         total_tokens = sum(s.total_tokens_estimate for s in summaries)
@@ -161,6 +177,8 @@ def _prompt_main_action(console: Console, prompter: Prompter, summaries: list[Sa
     result = prompter.select(title, choices)
     if result == CANCEL or result == MODE_QUIT:
         return "exit"
+    if result == MODE_RESUME_LAST:
+        return "resume_last"
     if result == MODE_RESUME:
         return "resume"
     if result == MODE_NEW:
@@ -228,8 +246,15 @@ def _run_resume_flow(
                 sort_order = new_order
                 sorted_runs = sort_summaries(summaries, sort_order)
             continue
-        summary = result
-        break
+        return _continue_resume_flow(console, prompter, result, resume_handler)
+
+
+def _continue_resume_flow(
+    console: Console,
+    prompter: Prompter,
+    summary: SavedConversationSummary,
+    resume_handler: Any,
+) -> bool:
     if not summary.resumable:
         console.print("[bold red]Cannot resume: raw AI context file is missing.[/bold red]")
         return False
@@ -245,6 +270,13 @@ def _run_resume_flow(
     target_tokens = _prompt_target_tokens(console, prompter, summary.total_tokens_estimate)
     resume_handler(_build_resume_args(summary.jsonl_path, target_tokens, overrides, persist_defaults))
     return True
+
+
+def _latest_resumable_summary(summaries: list[SavedConversationSummary]) -> SavedConversationSummary | None:
+    for summary in sort_summaries(summaries, "Newest first"):
+        if summary.resumable:
+            return summary
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -120,14 +120,17 @@ python -m memcomp_bench.cli resume output/conv_20260326_185127_marcus.jsonl \
 python -m memcomp_bench.cli interactive
 ```
 
-The interactive mode presents a three-way mode selector on launch:
+The interactive mode presents a mode selector on launch:
 
 | Mode | Hotkey | Description |
 |------|--------|-------------|
 | New generation | `n` | Select a profile, configure models and parameters, start generating |
+| Resume last generation | `l` | Jump straight into continuing the most recent resumable run |
 | Resume a run | `r` | Pick a saved run, optionally edit defaults, continue to a new token target |
 | View saved runs | `v` | Browse and inspect runs without modifying anything |
 | Quit | `q` | Exit |
+
+`Resume last generation` is only shown when at least one saved run still has its raw AI context file, and it targets the most recent resumable run if the newest JSONL is incomplete.
 
 **Navigation:** fully operable via arrows + Enter + Escape (or `j`/`k`/Enter/Esc for power users). Escape is a universal "go back" — pressing Esc from the main menu exits the application; pressing it from any sub-menu returns to the parent. Ctrl-C exits cleanly from anywhere without a traceback.
 

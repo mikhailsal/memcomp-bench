@@ -17,6 +17,7 @@ from memcomp_bench.interactive import (
     DETAIL_BACK,
     MODE_NEW,
     MODE_RESUME,
+    MODE_RESUME_LAST,
     MODE_VIEW,
     scan_saved_conversations,
 )
@@ -51,6 +52,18 @@ class ScriptedPrompter:
         if answer == "":
             return default if default is not None else choices[0]
         return answer
+
+
+class RecordingPrompter(ScriptedPrompter):
+    """Scripted prompter that records select menus for assertions."""
+
+    def __init__(self, answers: list[str], confirms: list[bool] | None = None) -> None:
+        super().__init__(answers, confirms)
+        self.select_calls: list[tuple[str, list[str], str | None]] = []
+
+    def select(self, prompt: str, choices: list[str], *, default: str | None = None) -> str:
+        self.select_calls.append((prompt, list(choices), default))
+        return super().select(prompt, choices, default=default)
 
 
 def _make_console() -> tuple[Console, StringIO]:
@@ -257,6 +270,73 @@ def test_interactive_resume_uses_rounded_default_target(tmp_path: Path, monkeypa
     )
 
     assert called["resume"].target_tokens == 25_000
+
+
+def test_interactive_resume_last_uses_latest_resumable_run(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    newest = _make_resume_record()
+    newest.id = "20260102_000000"
+    newest.total_tokens_estimate = 18_200
+    newest_jsonl = save_conversation(newest, output_dir)
+    (output_dir / f"{newest_jsonl.stem}_raw_ai_context.json").unlink()
+
+    older = _make_resume_record()
+    older.id = "20260101_000000"
+    older.total_tokens_estimate = 12_300
+    older_jsonl = save_conversation(older, output_dir)
+
+    called = {}
+    console, _ = _make_console()
+    prompter = ScriptedPrompter(
+        answers=[
+            MODE_RESUME_LAST,
+            DETAIL_BACK,
+            "Continue with saved defaults",
+            "",
+        ],
+    )
+
+    from memcomp_bench import interactive as interactive_module
+
+    interactive_module.run_interactive(
+        lambda args: called.setdefault("generate", args),
+        lambda args: called.setdefault("resume", args),
+        output_dir=output_dir,
+        console=console,
+        prompter=prompter,
+    )
+
+    assert called["resume"].file == str(older_jsonl)
+    assert called["resume"].target_tokens == 15_000
+
+
+def test_interactive_main_menu_hides_resume_last_when_no_resumable_runs(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("memcomp_bench.interactive.terminal_width", lambda: 120)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    jsonl_path = save_conversation(_make_resume_record(), output_dir)
+    (output_dir / f"{jsonl_path.stem}_raw_ai_context.json").unlink()
+
+    called = {}
+    console, _ = _make_console()
+    prompter = RecordingPrompter([CANCEL])
+
+    from memcomp_bench import interactive as interactive_module
+
+    interactive_module.run_interactive(
+        lambda args: called.setdefault("generate", args),
+        lambda args: called.setdefault("resume", args),
+        output_dir=output_dir,
+        console=console,
+        prompter=prompter,
+    )
+
+    assert MODE_RESUME_LAST not in prompter.select_calls[0][1]
+    assert called == {}
 
 
 def test_interactive_can_start_new_generation(monkeypatch, tmp_path: Path):

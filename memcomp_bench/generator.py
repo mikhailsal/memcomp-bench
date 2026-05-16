@@ -58,6 +58,7 @@ from memcomp_bench.generator_helpers import (  # noqa: F401
     _turns_to_context_rows,
     _uses_native_reasoning_field,
 )
+from memcomp_bench.model_registry import model_uses_tool_choice
 from memcomp_bench.openrouter_client import OpenRouterClient, Usage  # noqa: F401
 from memcomp_bench.persistence import (  # noqa: F401
     _write_conversation_markdown,
@@ -132,12 +133,12 @@ class ConversationGenerator:
         self.ai_temperature = ai_temperature
         self.ai_max_tokens = ai_max_tokens
         self.ai_rpm_limit = ai_rpm_limit
+        self.ai_tool_choice = model_uses_tool_choice(self.ai_model, "ai")
         self.human_provider = human_provider
         self.human_reasoning = human_reasoning
         self.human_temperature = human_temperature
         self.human_max_tokens = human_max_tokens
         self.human_rpm_limit = human_rpm_limit
-
         self._seed_words = generate_seed(5)
         self._ai_system_prompt = build_ai_system_prompt(self._seed_words, companion_mode=self.companion_mode)
         self._conversation_plan: str = ""
@@ -279,7 +280,9 @@ class ConversationGenerator:
             max_tokens=self.ai_max_tokens,
             temperature=self.ai_temperature,
             tools=AI_TOOLS,
-            tool_choice={"type": "function", "function": {"name": "write_message_to_human"}},
+            tool_choice=(
+                {"type": "function", "function": {"name": "write_message_to_human"}} if self.ai_tool_choice else None
+            ),
             provider=self.ai_provider,
             reasoning=self.ai_reasoning,
             request_role="ai",

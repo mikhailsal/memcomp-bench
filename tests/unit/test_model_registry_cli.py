@@ -11,18 +11,21 @@ class TestModelRegistry:
     def test_defaults_and_role_overrides_load(self):
         from memcomp_bench.model_registry import default_model_for, resolve_model_preset
 
-        assert default_model_for("ai") == "minimax/minimax-m2.7"
-        assert default_model_for("human") == "x-ai/grok-4.1-fast"
+        assert default_model_for("ai") == "deepseek/deepseek-v4-flash"
+        assert default_model_for("human") == "google/gemma-4-26b-a4b-it:free"
 
-        ai_preset = resolve_model_preset("minimax/minimax-m2.7", "ai")
-        assert ai_preset.temperature == 1.1
-        assert ai_preset.max_tokens == 2048
-        assert ai_preset.provider is None
+        ai_preset = resolve_model_preset("deepseek/deepseek-v4-flash", "ai")
+        assert ai_preset.provider == {"only": ["deepseek"], "allow_fallbacks": False}
+        assert ai_preset.reasoning == {"effort": "minimal", "exclude": False, "enable": True}
+        assert ai_preset.tool_choice is not False
 
-        human_preset = resolve_model_preset("x-ai/grok-4.1-fast", "human")
-        assert human_preset.disabled is True
+        human_preset = resolve_model_preset("google/gemma-4-26b-a4b-it:free", "human")
+        assert human_preset.disabled is False
         assert human_preset.temperature == 0.9
-        assert human_preset.max_tokens == 180
+        assert human_preset.max_tokens == 800
+
+        hy3_preset = resolve_model_preset("tencent/hy3-preview", "ai")
+        assert hy3_preset.tool_choice is False
 
     def test_validate_model_enabled_allows_unknown_models(self):
         from memcomp_bench.model_registry import validate_model_enabled
@@ -49,6 +52,9 @@ class TestCmdGenerateModelRegistryIntegration:
             nonlocal called
             called = True
 
+        monkeypatch.setattr(
+            "memcomp_bench.cli.default_model_for", lambda role: "x-ai/grok-4.1-fast" if role == "human" else None
+        )
         monkeypatch.setattr("memcomp_bench.cli.OpenRouterClient", lambda key: _make_generate_client())
         monkeypatch.setattr("memcomp_bench.cli.ConversationGenerator.__init__", fake_init)
 
@@ -90,7 +96,7 @@ class TestCmdGenerateModelRegistryIntegration:
 
         cmd_generate(_make_generate_args(ai_model=None, human_model="google/gemma-4-26b-a4b-it:free"))
 
-        assert seen["ai_model"] == "minimax/minimax-m2.7"
+        assert seen["ai_model"] == "deepseek/deepseek-v4-flash"
         assert seen["human_model"] == "google/gemma-4-26b-a4b-it:free"
         assert seen["ai_max_tokens"] == 2048
         assert seen["human_max_tokens"] == 800

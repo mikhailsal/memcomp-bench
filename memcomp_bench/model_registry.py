@@ -23,6 +23,7 @@ class ModelPreset:
     disabled: bool = False
     provider: dict[str, Any] | None | object = MISSING
     reasoning: dict[str, Any] | None | object = MISSING
+    tool_choice: bool | object = MISSING
     temperature: float | object = MISSING
     max_tokens: int | object = MISSING
     rpm_limit: int | None | object = MISSING
@@ -70,6 +71,14 @@ def _normalize_reasoning(value: Any) -> dict[str, Any] | None | object:
     raise TypeError(f"Unsupported reasoning config: {value!r}")
 
 
+def _normalize_tool_choice(value: Any) -> bool | object:
+    if value is MISSING:
+        return MISSING
+    if isinstance(value, bool):
+        return value
+    raise TypeError(f"Unsupported tool_choice config: {value!r}")
+
+
 @lru_cache(maxsize=1)
 def load_model_catalog(path: Path = MODELS_TOML_PATH) -> ModelCatalog:
     if not path.exists():
@@ -96,21 +105,27 @@ def resolve_model_preset(model: str, role: str) -> ModelPreset:
     merged: dict[str, Any] = {
         key: value
         for key, value in model_data.items()
-        if key in {"provider", "reasoning", "temperature", "max_tokens", "rpm_limit"}
+        if key in {"provider", "reasoning", "tool_choice", "temperature", "max_tokens", "rpm_limit"}
     }
     role_data = model_data.get("roles", {}).get(role, {})
     for key, value in role_data.items():
-        if key in {"provider", "reasoning", "temperature", "max_tokens", "rpm_limit"}:
+        if key in {"provider", "reasoning", "tool_choice", "temperature", "max_tokens", "rpm_limit"}:
             merged[key] = value
 
     return ModelPreset(
         disabled=_is_disabled_model(model_data),
         provider=_normalize_provider(merged.get("provider", MISSING)),
         reasoning=_normalize_reasoning(merged.get("reasoning", MISSING)),
+        tool_choice=_normalize_tool_choice(merged.get("tool_choice", MISSING)),
         temperature=merged.get("temperature", MISSING),
         max_tokens=merged.get("max_tokens", MISSING),
         rpm_limit=merged.get("rpm_limit", MISSING),
     )
+
+
+def model_uses_tool_choice(model: str, role: str) -> bool:
+    tool_choice = resolve_model_preset(model, role).tool_choice
+    return True if tool_choice is MISSING else bool(tool_choice)
 
 
 def validate_model_enabled(model: str, role: str, *, usage: str, source: str) -> None:

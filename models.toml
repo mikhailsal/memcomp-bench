@@ -1,6 +1,6 @@
 [defaults]
-ai_model = "minimax/minimax-m2.7"
-human_model = "x-ai/grok-4.1-fast"
+ai_model = "deepseek/deepseek-v4-flash"
+human_model = "google/gemma-4-26b-a4b-it:free"
 
 [models."minimax/minimax-m2.7"]
 temperature = 1.1
@@ -41,3 +41,47 @@ roles.ai = { temperature = 1.1, max_tokens = 2048 }
 provider = "auto"
 reasoning = { effort = "minimal" }
 roles.ai = { temperature = 1.1, max_tokens = 2048 }
+
+[models."google/gemini-3.1-pro-preview"]
+provider = "google-vertex"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."google/gemma-4-26b-a4b-it"]
+provider = "novita"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."x-ai/grok-4.20"]
+provider = "x-ai"
+reasoning = { enable = false }
+
+[models."moonshotai/kimi-k2.5"]
+provider = "moonshot"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."moonshotai/kimi-k2.6"]
+provider = "moonshot"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."deepseek/deepseek-v4-flash"]
+provider = "deepseek"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."deepseek/deepseek-v4-flash:free"]
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."tencent/hy3-preview"]
+provider = "siliconflow"
+reasoning = { enable = false }
+tool_choice = false
+
+[models."anthropic/claude-haiku-4.5"]
+provider = "anthropic"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."arcee-ai/trinity-large-thinking:free"]
+provider = "arcee"
+reasoning = { effort = "minimal", exclude = false, enable = true }
+
+[models."baidu/cobuddy:free"]
+provider = "baidu"
+reasoning = { effort = "minimal", exclude = false, enable = true }

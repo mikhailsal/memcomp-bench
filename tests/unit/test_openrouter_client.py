@@ -140,6 +140,61 @@ class TestHappyPath:
         client.close()
 
 
+class TestGeneratorToolChoiceConfig:
+    def test_hy3_model_omits_tool_choice(self, monkeypatch):
+        captured: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(request.content))
+            return httpx.Response(200, json=_ok_response())
+
+        monkeypatch.setattr(
+            "memcomp_bench.generator.generate_seed", lambda _: ["alpha", "beta", "gamma", "delta", "epsilon"]
+        )
+
+        from memcomp_bench.generator import ConversationGenerator
+
+        client = _make_client(handler)
+        generator = ConversationGenerator(
+            client,
+            {"name": "Test", "backstory": "Tester."},
+            ai_model="tencent/hy3-preview",
+        )
+
+        generator._get_ai_response()
+
+        assert captured, "expected an AI request"
+        assert "tools" in captured[0]
+        assert "tool_choice" not in captured[0]
+        client.close()
+
+    def test_default_model_still_sends_tool_choice(self, monkeypatch):
+        captured: list[dict[str, Any]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(json.loads(request.content))
+            return httpx.Response(200, json=_ok_response())
+
+        monkeypatch.setattr(
+            "memcomp_bench.generator.generate_seed", lambda _: ["alpha", "beta", "gamma", "delta", "epsilon"]
+        )
+
+        from memcomp_bench.generator import ConversationGenerator
+
+        client = _make_client(handler)
+        generator = ConversationGenerator(
+            client,
+            {"name": "Test", "backstory": "Tester."},
+            ai_model="minimax/minimax-m2.7",
+        )
+
+        generator._get_ai_response()
+
+        assert captured, "expected an AI request"
+        assert captured[0]["tool_choice"]["function"]["name"] == "write_message_to_human"
+        client.close()
+
+
 # ---------------------------------------------------------------------------
 # Retry on 429 / 5xx
 # ---------------------------------------------------------------------------

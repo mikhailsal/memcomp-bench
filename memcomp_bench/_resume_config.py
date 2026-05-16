@@ -14,7 +14,7 @@ from memcomp_bench.config import (
     HUMAN_REASONING,
     HUMAN_TEMPERATURE,
 )
-from memcomp_bench.model_registry import MISSING, resolve_model_preset
+from memcomp_bench.model_registry import MISSING, resolve_model_preset, validate_model_enabled
 from memcomp_bench.persistence import get_saved_resume_defaults
 
 
@@ -36,22 +36,21 @@ def _extract_resume_config(
 ) -> dict:
     """Extract and merge saved metadata with CLI overrides into a flat config dict."""
     saved_defaults = get_saved_resume_defaults(metadata)
-    ai_model = ai_model_override or saved_defaults["ai_model"]
-    human_model = human_model_override or saved_defaults["human_model"]
+    ai_model, human_model = _resolve_resume_models(
+        saved_defaults,
+        ai_model_override=ai_model_override,
+        human_model_override=human_model_override,
+    )
     ai_preset = resolve_model_preset(ai_model, "ai")
     human_preset = resolve_model_preset(human_model, "human")
 
-    cfg = {
-        "profile": metadata["human_profile"],
-        "ai_model": ai_model,
-        "human_model": human_model,
-        "seed_words": metadata.get("seed_words", []),
-        "conversation_plan": metadata.get("conversation_plan", ""),
-        "language": language_override or saved_defaults.get("language", metadata.get("language", "english")),
-        "companion_mode": metadata.get("companion_mode", "supportive"),
-        "previous_cost": metadata.get("total_cost_usd", 0.0),
-        "saved_resume_defaults": saved_defaults,
-    }
+    cfg = _base_resume_config(
+        metadata,
+        saved_defaults,
+        ai_model=ai_model,
+        human_model=human_model,
+        language_override=language_override,
+    )
     cfg.update(
         _resolve_resume_role_settings(
             saved_defaults,
@@ -83,6 +82,45 @@ def _extract_resume_config(
         )
     )
     return cfg
+
+
+def _resolve_resume_models(
+    saved_defaults: dict[str, Any],
+    *,
+    ai_model_override: str | None,
+    human_model_override: str | None,
+) -> tuple[str, str]:
+    ai_model = ai_model_override or saved_defaults["ai_model"]
+    human_model = human_model_override or saved_defaults["human_model"]
+    validate_model_enabled(ai_model, "ai", usage="resume", source="override" if ai_model_override else "saved")
+    validate_model_enabled(
+        human_model,
+        "human",
+        usage="resume",
+        source="override" if human_model_override else "saved",
+    )
+    return ai_model, human_model
+
+
+def _base_resume_config(
+    metadata: dict[str, Any],
+    saved_defaults: dict[str, Any],
+    *,
+    ai_model: str,
+    human_model: str,
+    language_override: str | None,
+) -> dict[str, Any]:
+    return {
+        "profile": metadata["human_profile"],
+        "ai_model": ai_model,
+        "human_model": human_model,
+        "seed_words": metadata.get("seed_words", []),
+        "conversation_plan": metadata.get("conversation_plan", ""),
+        "language": language_override or saved_defaults.get("language", metadata.get("language", "english")),
+        "companion_mode": metadata.get("companion_mode", "supportive"),
+        "previous_cost": metadata.get("total_cost_usd", 0.0),
+        "saved_resume_defaults": saved_defaults,
+    }
 
 
 def _preset_default(preset: Any, field: str, fallback: Any) -> Any:

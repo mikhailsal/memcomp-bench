@@ -360,7 +360,7 @@ def test_interactive_can_start_new_generation(monkeypatch, tmp_path: Path):
             "",
             "",
             "",
-            "",
+            "google/gemma-4-26b-a4b-it:free",
             "",
             "",
             "",
@@ -377,6 +377,54 @@ def test_interactive_can_start_new_generation(monkeypatch, tmp_path: Path):
 
     jsonl_files = list(output_dir.glob("*.jsonl"))
     assert jsonl_files
+
+
+def test_interactive_generate_shows_disabled_model_error(monkeypatch, tmp_path: Path, capsys):
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    output_dir = tmp_path / "output"
+    monkeypatch.setattr("memcomp_bench.cli.OUTPUT_DIR", output_dir)
+    monkeypatch.setattr("memcomp_bench.config.ENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("OPENROUTER_KEY", "interactive-test-key")
+
+    called = False
+
+    def fake_init(self, client, human_profile, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr("memcomp_bench.cli.OpenRouterClient", lambda key: _make_generate_client())
+    monkeypatch.setattr("memcomp_bench.cli.ConversationGenerator.__init__", fake_init)
+
+    from memcomp_bench.cli import cmd_interactive
+
+    console, stream = _make_console()
+    prompter = ScriptedPrompter(
+        answers=[
+            MODE_NEW,
+            "0  Marcus",
+            "200",
+            "",
+            "",
+            "",
+            "x-ai/grok-4.1-fast",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ],
+        confirms=[False],
+    )
+
+    cmd_interactive(Namespace(), prompter=prompter, console_override=console)
+
+    assert called is False
+    out = capsys.readouterr().out
+    assert "disabled in models.toml" in out
+    assert "new generations" in out
 
 
 def test_interactive_view_mode_shows_details(monkeypatch, tmp_path: Path):

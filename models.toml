@@ -9,6 +9,7 @@ reasoning = { effort = "minimal", exclude = false, enable = true }
 roles.ai = { max_tokens = 2048 }
 
 [models."x-ai/grok-4.1-fast"]
+disabled = true
 temperature = 0.9
 provider = "auto"
 reasoning = { effort = "minimal", exclude = false, enable = true }

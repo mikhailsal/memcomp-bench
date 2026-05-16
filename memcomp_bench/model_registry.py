@@ -20,6 +20,7 @@ MISSING = object()
 
 @dataclass(frozen=True)
 class ModelPreset:
+    disabled: bool = False
     provider: dict[str, Any] | None | object = MISSING
     reasoning: dict[str, Any] | None | object = MISSING
     temperature: float | object = MISSING
@@ -32,6 +33,14 @@ class ModelCatalog:
     default_ai_model: str | None
     default_human_model: str | None
     models: dict[str, dict[str, Any]]
+
+
+class DisabledModelError(ValueError):
+    """Raised when a configured model is marked disabled in models.toml."""
+
+
+def _is_disabled_model(model_data: dict[str, Any] | None) -> bool:
+    return bool(model_data and model_data.get("disabled") is True)
 
 
 def _normalize_provider(value: Any) -> dict[str, Any] | None | object:
@@ -95,12 +104,38 @@ def resolve_model_preset(model: str, role: str) -> ModelPreset:
             merged[key] = value
 
     return ModelPreset(
+        disabled=_is_disabled_model(model_data),
         provider=_normalize_provider(merged.get("provider", MISSING)),
         reasoning=_normalize_reasoning(merged.get("reasoning", MISSING)),
         temperature=merged.get("temperature", MISSING),
         max_tokens=merged.get("max_tokens", MISSING),
         rpm_limit=merged.get("rpm_limit", MISSING),
     )
+
+
+def validate_model_enabled(model: str, role: str, *, usage: str, source: str) -> None:
+    """Reject configured disabled models with a role- and usage-aware message."""
+    model_data = load_model_catalog().models.get(model)
+    if not _is_disabled_model(model_data):
+        return
+
+    role_label = "AI" if role == "ai" else "Human"
+    if usage == "generate":
+        raise DisabledModelError(
+            f"{role_label} model '{model}' is disabled in models.toml and cannot be used for new generations."
+        )
+
+    if usage == "resume":
+        if source == "saved":
+            raise DisabledModelError(
+                f"Saved {role} model '{model}' is disabled in models.toml and cannot be used to continue this run. "
+                f"Choose a replacement with '--{role}-model'."
+            )
+        raise DisabledModelError(
+            f"{role_label} model '{model}' is disabled in models.toml and cannot be used to continue this run."
+        )
+
+    raise ValueError(f"Unknown model validation usage: {usage}")
 
 
 def default_model_for(role: str) -> str | None:

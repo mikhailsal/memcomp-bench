@@ -26,7 +26,13 @@ from memcomp_bench.config import (
     load_api_key,
 )
 from memcomp_bench.generator import _UNSET, ConversationGenerator, reformat_markdown, save_conversation
-from memcomp_bench.model_registry import MISSING, default_model_for, resolve_model_preset
+from memcomp_bench.model_registry import (
+    MISSING,
+    DisabledModelError,
+    default_model_for,
+    resolve_model_preset,
+    validate_model_enabled,
+)
 from memcomp_bench.openrouter_client import OpenRouterClient
 from memcomp_bench.prompts import HUMAN_PROFILES, get_human_profile
 
@@ -79,6 +85,13 @@ def _build_generate_kwargs(args: argparse.Namespace) -> dict[str, object]:
     """Build ConversationGenerator kwargs for the generate command."""
     ai_model = args.ai_model or default_model_for("ai") or AI_MODEL
     human_model = args.human_model or default_model_for("human") or HUMAN_MODEL
+    validate_model_enabled(ai_model, "ai", usage="generate", source="override" if args.ai_model else "default")
+    validate_model_enabled(
+        human_model,
+        "human",
+        usage="generate",
+        source="override" if args.human_model else "default",
+    )
     ai_preset = resolve_model_preset(ai_model, "ai")
     human_preset = resolve_model_preset(human_model, "human")
 
@@ -130,32 +143,32 @@ def cmd_generate(args: argparse.Namespace) -> None:
     api_key = load_api_key()
     client = OpenRouterClient(api_key)
 
-    profile = _resolve_profile(args.profile)
-    console.print(f"[bold]Using human profile: {profile['name']}[/bold]")
-
-    generate_kwargs = _finalize_generate_kwargs(args, _build_generate_kwargs(args))
-    generator = ConversationGenerator(
-        client,
-        profile,
-        ai_model=cast(str, generate_kwargs["ai_model"]),
-        human_model=cast(str, generate_kwargs["human_model"]),
-        target_tokens=cast(int, generate_kwargs["target_tokens"]),
-        language=cast(str, generate_kwargs["language"]),
-        companion_mode=cast(str, generate_kwargs["companion_mode"]),
-        verbose=cast(bool, generate_kwargs["verbose"]),
-        ai_provider=cast(dict | None, generate_kwargs["ai_provider"]),
-        ai_reasoning=cast(dict | None, generate_kwargs["ai_reasoning"]),
-        ai_temperature=cast(float, generate_kwargs["ai_temperature"]),
-        ai_max_tokens=cast(int, generate_kwargs["ai_max_tokens"]),
-        ai_rpm_limit=cast(int | None, generate_kwargs["ai_rpm_limit"]),
-        human_provider=cast(dict | None, generate_kwargs["human_provider"]),
-        human_reasoning=cast(dict | None, generate_kwargs["human_reasoning"]),
-        human_temperature=cast(float, generate_kwargs["human_temperature"]),
-        human_max_tokens=cast(int, generate_kwargs["human_max_tokens"]),
-        human_rpm_limit=cast(int | None, generate_kwargs["human_rpm_limit"]),
-    )
-
     try:
+        profile = _resolve_profile(args.profile)
+        console.print(f"[bold]Using human profile: {profile['name']}[/bold]")
+
+        generate_kwargs = _finalize_generate_kwargs(args, _build_generate_kwargs(args))
+        generator = ConversationGenerator(
+            client,
+            profile,
+            ai_model=cast(str, generate_kwargs["ai_model"]),
+            human_model=cast(str, generate_kwargs["human_model"]),
+            target_tokens=cast(int, generate_kwargs["target_tokens"]),
+            language=cast(str, generate_kwargs["language"]),
+            companion_mode=cast(str, generate_kwargs["companion_mode"]),
+            verbose=cast(bool, generate_kwargs["verbose"]),
+            ai_provider=cast(dict | None, generate_kwargs["ai_provider"]),
+            ai_reasoning=cast(dict | None, generate_kwargs["ai_reasoning"]),
+            ai_temperature=cast(float, generate_kwargs["ai_temperature"]),
+            ai_max_tokens=cast(int, generate_kwargs["ai_max_tokens"]),
+            ai_rpm_limit=cast(int | None, generate_kwargs["ai_rpm_limit"]),
+            human_provider=cast(dict | None, generate_kwargs["human_provider"]),
+            human_reasoning=cast(dict | None, generate_kwargs["human_reasoning"]),
+            human_temperature=cast(float, generate_kwargs["human_temperature"]),
+            human_max_tokens=cast(int, generate_kwargs["human_max_tokens"]),
+            human_rpm_limit=cast(int | None, generate_kwargs["human_rpm_limit"]),
+        )
+
         record = generator.generate()
         save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
@@ -167,6 +180,8 @@ def cmd_generate(args: argparse.Namespace) -> None:
             record.finished_at = "interrupted"
             record.total_cost_usd = client.total_cost
             save_conversation(record, OUTPUT_DIR)
+    except DisabledModelError as e:
+        console.print(f"\n[bold red]Error: {e}[/bold red]")
     except Exception as e:
         console.print(f"\n[bold red]Error: {e}[/bold red]")
         raise
@@ -214,6 +229,8 @@ def cmd_resume(args: argparse.Namespace) -> None:
         save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted by user.[/yellow]")
+    except DisabledModelError as e:
+        console.print(f"\n[bold red]Error: {e}[/bold red]")
     except Exception as e:
         console.print(f"\n[bold red]Error: {e}[/bold red]")
         raise

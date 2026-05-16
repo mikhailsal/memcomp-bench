@@ -71,7 +71,7 @@ python -m memcomp_bench.cli generate \
 python -m memcomp_bench.cli generate --ai-provider minimax --human-provider x-ai
 ```
 
-`generate` now reads model defaults from `models.toml` in the repo root. That file defines the default AI/human models plus per-model defaults such as `provider`, `reasoning`, `temperature`, `max_tokens`, and `rpm_limit`, with optional role-specific overrides when the same model is used as `ai` vs `human`.
+`generate` now reads model defaults from `models.toml` in the repo root. That file defines the default AI/human models plus per-model defaults such as `provider`, `reasoning`, `temperature`, `max_tokens`, `rpm_limit`, and `disabled`, with optional role-specific overrides when the same model is used as `ai` vs `human`.
 
 Precedence rules:
 
@@ -80,6 +80,8 @@ Precedence rules:
 
 That means resume keeps the parameters saved in the conversation history unless you explicitly override them on the CLI.
 Resume overrides are temporary by default; add `--persist-resume-defaults` when you want the JSONL's future resume defaults updated too.
+
+If a configured model has `disabled = true`, it cannot be used for new generations and it cannot be used to continue an old run unless you replace it with another model at resume time. Models not listed in `models.toml` are still allowed as free-text overrides.
 
 Minimal `models.toml` example:
 
@@ -96,6 +98,8 @@ reasoning = { effort = "minimal", exclude = false, enable = true }
 [models."minimax/minimax-m2.7".roles.ai]
 max_tokens = 2048
 ```
+
+Current repo note: `x-ai/grok-4.1-fast` is intentionally marked disabled in [models.toml](/home/tass/myprojects/ai-bench/memcomp-bench/models.toml), so fresh runs must choose a different human model and older runs that used it must pass `--human-model ...` or edit the model in interactive resume before continuing.
 
 **Resume** an interrupted or completed conversation to extend it further:
 
@@ -146,6 +150,8 @@ The interactive mode presents a mode selector on launch:
 **Detail panel:** selecting a run shows a comprehensive Rich-formatted panel with sections for General (file, timestamps, duration, status), Conversation (profile, language, tokens, turns, cost), AI Model (model, provider, temperature, max tokens, RPM, reasoning), Human Simulator (same fields), and Resume Defaults (if different from the last run's effective config).
 
 **Model entry:** when starting a new generation, AI and human models show the resolved default from `models.toml` and accept any model ID via free-text entry.
+
+If the chosen model is present in `models.toml` with `disabled = true`, the command stops with a clear error instead of launching the run.
 
 **Status bar:** always visible at the bottom showing context-appropriate keybindings (`Enter select | Esc back` on short menus, `/ search | Enter select | Esc back` on searchable lists).
 

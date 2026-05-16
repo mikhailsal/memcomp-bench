@@ -220,6 +220,7 @@ class TestResumeLoop:
         gen = ConversationGenerator(
             client,
             profile,
+            human_model="google/gemma-4-26b-a4b-it:free",
             target_tokens=300,
             max_turns=10,
         )
@@ -326,6 +327,7 @@ class TestResumeLoop:
             max_turns=10,
             ai_rpm_limit=6,
             human_rpm_limit=4,
+            human_model="google/gemma-4-26b-a4b-it:free",
         )
         jsonl_path = save_conversation(gen.generate(), tmp_output_dir)
 
@@ -372,7 +374,7 @@ class TestResumeLoop:
             target_tokens=300,
             max_turns=10,
             ai_model="minimax/minimax-m2.7",
-            human_model="x-ai/grok-4.1-fast",
+            human_model="google/gemma-4-26b-a4b-it:free",
             ai_provider={"only": ["minimax"], "allow_fallbacks": False},
             ai_reasoning={"effort": "high"},
             ai_max_tokens=777,

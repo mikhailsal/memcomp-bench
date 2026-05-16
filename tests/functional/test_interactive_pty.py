@@ -192,3 +192,34 @@ def test_esc_from_sub_menu_returns_to_main(pty_env: Path):
     child.expect(pexpect.EOF, timeout=TIMEOUT)
     child.close()
     assert child.exitstatus == 0
+
+
+def test_esc_from_resume_override_text_prompt_returns_promptly(pty_env: Path):
+    """Esc in questionary text prompts should return without the old noticeable pause."""
+    child = _spawn(pty_env)
+    child.expect("What would you like to do", timeout=TIMEOUT)
+    time.sleep(0.3)
+    _send_key(child, "l")
+    child.expect("Run Details:", timeout=TIMEOUT)
+    time.sleep(0.3)
+    child.send("\r")
+    child.expect(r"How would you like to continue\?", timeout=TIMEOUT)
+    time.sleep(0.3)
+    _send_key(child, "j")
+    child.send("\r")
+    child.expect("Press Enter to keep the saved value", timeout=TIMEOUT)
+    child.expect("Language", timeout=TIMEOUT)
+    child.expect("Type value | Enter accept | Esc back", timeout=TIMEOUT)
+    time.sleep(0.3)
+
+    started = time.monotonic()
+    child.send("\x1b")
+    child.expect("What would you like to do", timeout=TIMEOUT)
+    elapsed = time.monotonic() - started
+
+    _send_key(child, "q")
+    child.expect(pexpect.EOF, timeout=TIMEOUT)
+    child.close()
+
+    assert child.exitstatus == 0
+    assert elapsed < 0.35, f"Esc from text prompt took {elapsed:.3f}s"

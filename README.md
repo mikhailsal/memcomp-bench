@@ -197,6 +197,29 @@ Each generation produces three files in `output/`:
 
 The JSONL metadata also stores a `resume_defaults` payload. That keeps the future default values for resume separate from the parameters used by the latest continuation, which is what makes temporary overrides possible.
 
+## Web Viewer
+
+Browse generated conversations in a modern web interface:
+
+**[https://mikhailsal.github.io/memcomp-bench/](https://mikhailsal.github.io/memcomp-bench/)**
+
+The viewer is a React + Vite + Tailwind CSS app in `web/`. A build-time script scans all `output/*.jsonl` files to produce a compact manifest with metadata summaries; full conversation data is fetched on-demand when you open a specific run. The UI features:
+
+- Sortable/filterable conversation list with search by profile, model, seed words, or language
+- Chat-style conversation viewer with color-coded turns (human in blue, AI in green)
+- Collapsible AI reasoning panels (inner monologue, native reasoning, response drafts)
+- Per-turn context token counters and system event markers (topic judge nudges)
+- Collapsible human profile backstory and conversation plan
+- Dark/light theme toggle
+
+The site auto-deploys via GitHub Actions whenever new conversations or web changes are pushed to `main`:
+
+```bash
+make web-dev       # local dev server with hot reload
+make web-build     # production build
+make web-preview   # preview the production build
+```
+
 ## Human Profiles
 
 Nine built-in profiles, each with a unique backstory and conversational style:

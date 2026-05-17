@@ -18,6 +18,12 @@ htmlcov/
 .vscode/
 .idea/
 
+# Web viewer
+web/node_modules/
+web/dist/
+web/public/manifest.json
+web/public/output/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -71,7 +71,7 @@ reasoning = { effort = "minimal", exclude = false, enable = true }
 
 [models."tencent/hy3-preview"]
 provider = "siliconflow"
-reasoning = { enable = false }
+reasoning = { effort = "none", enable = false }
 tool_choice = false
 
 [models."anthropic/claude-haiku-4.5"]

@@ -125,6 +125,21 @@ hooks-update: ## Update pre-commit hook revisions to latest tags
 	pre-commit autoupdate
 
 # ---------------------------------------------------------------------------
+# Web viewer
+# ---------------------------------------------------------------------------
+
+.PHONY: web-dev web-build web-preview
+
+web-dev: ## Start web viewer dev server
+	cd web && npm run dev
+
+web-build: ## Build web viewer for production
+	cd web && npm run build
+
+web-preview: ## Preview production build locally
+	cd web && npm run preview
+
+# ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
 

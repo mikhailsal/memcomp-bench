@@ -106,6 +106,32 @@ def test_generate_retries_human_non_stop_finish_reason(monkeypatch):
     assert "Cut off reply" not in json.dumps(gen._ai_messages)
 
 
+def test_generate_retries_when_human_returns_dormant_placeholder(monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    client = FakeChatClient(
+        [
+            make_plain_response("Plan: keep it casual."),
+            make_tool_call_response("Hey there!", tool_call_id="wmth00001"),
+            make_plain_response("[No message — the conversation is dormant]"),
+            make_plain_response("Hey. Sorry, got pulled into work for a couple days."),
+            make_tool_call_response("Glad you're back.", tool_call_id="wmth00002"),
+        ]
+    )
+
+    gen = ConversationGenerator(
+        client,
+        HUMAN_PROFILES[0],
+        target_tokens=80,
+        max_turns=2,
+    )
+    record = gen.generate()
+
+    assert record.turns[0].visible_text == "Hey. Sorry, got pulled into work for a couple days."
+    assert all("No message" not in turn.visible_text for turn in record.turns)
+    human_calls = [call for call in client.call_log if call.get("request_role") == "human"]
+    assert len(human_calls) == 3
+
+
 def test_resume_sanitizes_existing_raw_human_tool_messages(monkeypatch, tmp_output_dir: Path):
     monkeypatch.setattr(time, "sleep", lambda _: None)
     client = _scripted_client_for_generate()

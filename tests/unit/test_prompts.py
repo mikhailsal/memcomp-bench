@@ -107,6 +107,12 @@ class TestHumanProfiles:
         prompt = build_human_system_prompt(profile, conversation_plan="Talk about cats")
         assert "Talk about cats" in prompt
 
+    def test_prompt_forbids_dormant_placeholder_meta_messages(self):
+        profile = get_human_profile(0)
+        prompt = build_human_system_prompt(profile)
+        assert "NEVER output meta placeholders or stage directions" in prompt
+        assert "[No message — the conversation is dormant]" in prompt
+
     def test_custom_system_prompt_profile(self):
         alex = next(p for p in HUMAN_PROFILES if p.get("system_prompt"))
         prompt = build_human_system_prompt(alex, conversation_plan="Plan X", language="hebrew")

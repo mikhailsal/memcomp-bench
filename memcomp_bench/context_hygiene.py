@@ -10,6 +10,13 @@ _HUMAN_HIDDEN_TAG_BLOCK_RE = re.compile(
     r"<\s*(?P<tag>thoughts?|think(?:ing)?)\b[^>]*>(?P<body>.*?)</\s*(?P=tag)\s*>",
     re.IGNORECASE | re.DOTALL,
 )
+_HUMAN_META_PLACEHOLDER_RE = re.compile(
+    r"^\s*(?:"
+    r"\[(?:[^\]]*?(?:no\s+message|conversation\s+is\s+dormant|ai\s+has\s+ended\s+the\s+conversation|human\s+has\s+ended\s+the\s+conversation|silence|conversation\s+ended))[^\]]*\]"
+    r"|\((?:wait(?:ing)?\s+for\s+[^)]*response|no\s+message[^)]*)\)"
+    r")\s*$",
+    re.IGNORECASE,
+)
 
 
 def _normalize_human_text(text: str) -> str:
@@ -17,6 +24,13 @@ def _normalize_human_text(text: str) -> str:
     text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def _strip_human_meta_placeholder(text: str) -> str:
+    normalized = _normalize_human_text(text)
+    if _HUMAN_META_PLACEHOLDER_RE.match(normalized):
+        return ""
+    return normalized
 
 
 def extract_human_thinking(text: str | None) -> tuple[str, str | None]:
@@ -42,7 +56,7 @@ def extract_human_thinking(text: str | None) -> tuple[str, str | None]:
         if not matched:
             break
 
-    visible_text = _normalize_human_text(cleaned)
+    visible_text = _strip_human_meta_placeholder(cleaned)
     hidden_reasoning = "\n\n".join(part for part in thoughts if part) or None
     return visible_text, hidden_reasoning
 

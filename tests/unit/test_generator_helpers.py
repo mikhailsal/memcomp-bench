@@ -375,6 +375,14 @@ class TestSanitizeHumanVisibleText:
         text = "Hello <thought>secret</thought> there"
         assert sanitize_human_visible_text(text) == "Hello there"
 
+    def test_strips_dormant_placeholder_meta_message(self):
+        text = "[No message — the conversation is dormant]"
+        assert sanitize_human_visible_text(text) == ""
+
+    def test_strips_waiting_stage_direction(self):
+        text = "(Waiting for Nathan's response)"
+        assert sanitize_human_visible_text(text) == ""
+
 
 class TestSplitThinkingAndMessage:
     def test_plain_text(self):

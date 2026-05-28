@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -69,6 +70,8 @@ class OpenRouterClient:
         self.total_prompt_tokens: int = 0
         self.total_completion_tokens: int = 0
         self._rpm_windows: dict[str, _RPMWindow] = {}
+        self._rpm_lock = threading.Lock()
+        self._totals_lock = threading.Lock()
 
     _RETRYABLE_CODES = frozenset({429, 500, 502, 503, 504})
     _MAX_RETRIES = 5
@@ -132,6 +135,10 @@ class OpenRouterClient:
     def _ensure_rpm_state(self) -> None:
         if not hasattr(self, "_rpm_windows"):
             self._rpm_windows = {}
+        if not hasattr(self, "_rpm_lock"):
+            self._rpm_lock = threading.Lock()
+        if not hasattr(self, "_totals_lock"):
+            self._totals_lock = threading.Lock()
 
     def _prune_rpm_window(self, window: _RPMWindow, now: float) -> None:
         cutoff = now - 60.0
@@ -145,21 +152,23 @@ class OpenRouterClient:
             raise ValueError("rpm_limit must be a positive integer")
 
         self._ensure_rpm_state()
-        window = self._rpm_windows.get(request_role)
-        if window is None or window.limit != rpm_limit:
-            window = _RPMWindow(limit=rpm_limit)
-            self._rpm_windows[request_role] = window
+        while True:
+            wait_seconds = 0.0
+            with self._rpm_lock:
+                window = self._rpm_windows.get(request_role)
+                if window is None or window.limit != rpm_limit:
+                    window = _RPMWindow(limit=rpm_limit)
+                    self._rpm_windows[request_role] = window
 
-        now = time.monotonic()
-        self._prune_rpm_window(window, now)
-        while len(window.timestamps) >= rpm_limit:
-            wait_seconds = 60.0 - (now - window.timestamps[0])
+                now = time.monotonic()
+                self._prune_rpm_window(window, now)
+                if len(window.timestamps) < rpm_limit:
+                    window.timestamps.append(now)
+                    return
+                wait_seconds = max(0.0, 60.0 - (now - window.timestamps[0]))
             if wait_seconds > 0:
                 print(f"[rate-limit] {request_role} reached {rpm_limit} RPM, waiting {wait_seconds:.1f}s...")
                 time.sleep(wait_seconds)
-            now = time.monotonic()
-            self._prune_rpm_window(window, now)
-        window.timestamps.append(now)
 
     def _send_with_retries(
         self,
@@ -217,9 +226,11 @@ class OpenRouterClient:
             elapsed_seconds=round(elapsed, 2),
         )
 
-        self.total_cost += usage.cost_usd
-        self.total_prompt_tokens += usage.prompt_tokens
-        self.total_completion_tokens += usage.completion_tokens
+        self._ensure_rpm_state()
+        with self._totals_lock:
+            self.total_cost += usage.cost_usd
+            self.total_prompt_tokens += usage.prompt_tokens
+            self.total_completion_tokens += usage.completion_tokens
 
         return LLMResponse(
             content=message.get("content"),

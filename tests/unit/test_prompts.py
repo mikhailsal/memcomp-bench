@@ -10,6 +10,7 @@ from memcomp_bench.prompts import (
     HUMAN_PROFILES,
     SEED_WORDS,
     SEND_MESSAGE_TOOL,
+    ToolCallIdSequence,
     build_ai_system_prompt,
     build_human_system_prompt,
     extract_tool_call_text,
@@ -160,6 +161,14 @@ class TestToolCallCounter:
         assert args["reasoning"] == "pondering"
         assert list(args) == ["reasoning", "text"]
         assert msg["content"] is None
+
+    def test_sequences_are_independent(self):
+        first = ToolCallIdSequence()
+        second = ToolCallIdSequence()
+
+        assert next_tool_call_id(first) == "wmth00001"
+        assert next_tool_call_id(first) == "wmth00002"
+        assert next_tool_call_id(second) == "wmth00001"
 
 
 # ---------------------------------------------------------------------------

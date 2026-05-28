@@ -31,6 +31,7 @@ from memcomp_bench.persistence import (
     get_saved_resume_defaults,
     load_conversation_metadata,
 )
+from memcomp_bench.persistence_runtime import is_run_published
 from memcomp_bench.prompts import HUMAN_PROFILES
 
 SORT_ORDERS = [
@@ -117,6 +118,8 @@ def scan_saved_conversations(output_dir: Path) -> list[SavedConversationSummary]
     if not output_dir.exists():
         return summaries
     for jsonl_path in sorted(output_dir.glob("conv_*.jsonl"), reverse=True):
+        if not is_run_published(jsonl_path):
+            continue
         try:
             metadata = load_conversation_metadata(jsonl_path)
         except (OSError, ValueError, json.JSONDecodeError):

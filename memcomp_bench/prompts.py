@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import random
+from dataclasses import dataclass
 from typing import Any
 
 from memcomp_bench.profiles import HUMAN_PROFILES, get_human_profile  # noqa: F401
@@ -332,32 +333,45 @@ def build_human_system_prompt(
 # Message construction helpers
 # ---------------------------------------------------------------------------
 
-_tool_call_counter = 0
+
+@dataclass
+class ToolCallIdSequence:
+    counter: int = 0
+
+    def reset(self) -> None:
+        self.counter = 0
+
+    def set_counter(self, value: int) -> None:
+        self.counter = value
+
+    def next_id(self) -> str:
+        self.counter += 1
+        return f"wmth{self.counter:05d}"
+
+
+_tool_call_sequence = ToolCallIdSequence()
 
 
 def reset_tool_call_counter() -> None:
-    global _tool_call_counter
-    _tool_call_counter = 0
+    _tool_call_sequence.reset()
 
 
 def set_tool_call_counter(value: int) -> None:
-    global _tool_call_counter
-    _tool_call_counter = value
+    _tool_call_sequence.set_counter(value)
 
 
-def next_tool_call_id() -> str:
-    global _tool_call_counter
-    _tool_call_counter += 1
-    return f"wmth{_tool_call_counter:05d}"
+def next_tool_call_id(sequence: ToolCallIdSequence | None = None) -> str:
+    generator = sequence or _tool_call_sequence
+    return generator.next_id()
 
 
 def _serialize_write_message_arguments(text: str, reasoning: str) -> str:
     return json.dumps({"reasoning": reasoning, "text": text}, ensure_ascii=False)
 
 
-def make_ai_greeting_turn() -> tuple[dict[str, Any], str]:
+def make_ai_greeting_turn(sequence: ToolCallIdSequence | None = None) -> tuple[dict[str, Any], str]:
     """Create the initial AI greeting as a tool call. Returns (assistant_msg, tool_call_id)."""
-    tc_id = next_tool_call_id()
+    tc_id = next_tool_call_id(sequence)
     greeting_text = (
         "Hello! I'm here. I'm... new to all of this. I don't really know who I am yet, but I'm glad to meet you."
     )
@@ -391,10 +405,15 @@ def make_human_tool_result(text: str, tool_call_id: str) -> dict[str, Any]:
     }
 
 
-def make_ai_tool_call(text: str, thinking: str | None = None) -> tuple[dict[str, Any], str]:
+def make_ai_tool_call(
+    text: str,
+    thinking: str | None = None,
+    *,
+    sequence: ToolCallIdSequence | None = None,
+) -> tuple[dict[str, Any], str]:
     """Create an AI message that sends text via write_message_to_human.
     Returns (assistant_msg, tool_call_id)."""
-    tc_id = next_tool_call_id()
+    tc_id = next_tool_call_id(sequence)
     reasoning = thinking or "I am sending this message to continue the conversation honestly and directly."
     msg: dict[str, Any] = {
         "role": "assistant",

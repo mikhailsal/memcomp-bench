@@ -18,7 +18,7 @@ from memcomp_bench.generator_helpers import (
     _estimate_tokens,
     _uses_native_reasoning_field,
 )
-from memcomp_bench.prompts import make_ai_greeting_turn, reset_tool_call_counter
+from memcomp_bench.prompts import make_ai_greeting_turn
 
 console = Console()
 
@@ -34,7 +34,8 @@ _B3_REFRESH_NOTE = (
 def do_generate(gen: Any) -> ConversationRecord:
     """Run the full conversation generation loop."""
 
-    reset_tool_call_counter()
+    gen._tool_call_ids.reset()
+    gen._total_cost_usd = 0.0
     console.print(f"\n[bold]Starting conversation with {gen.human_profile['name']}[/bold]")
     console.print(f"  AI model: {gen.ai_model}")
     console.print(f"  Human model: {gen.human_model}")
@@ -57,13 +58,12 @@ def do_generate(gen: Any) -> ConversationRecord:
     _bootstrap_ai_greeting(gen)
 
     turn_number = 1
-    cost_before = gen.client.total_cost
     human_text, human_reasoning, human_reasoning_details, human_usage = gen._get_human_response()
 
     if not human_text or not human_text.strip():
         human_text, human_reasoning, human_reasoning_details = _retry_first_human(gen)
 
-    human_cost = gen.client.total_cost - cost_before
+    human_cost = human_usage.cost_usd if human_usage else 0.0
     gen._add_human_turn_to_contexts(
         human_text, is_first=True, reasoning=human_reasoning, reasoning_details=human_reasoning_details
     )
@@ -123,7 +123,7 @@ def _bootstrap_ai_greeting(gen: Any) -> None:
         gen._last_tool_call_id = ai_greeting.tool_call_id
     else:
         console.print("  [yellow]AI greeting failed after 5 attempts \u2014 using fallback greeting[/yellow]")
-        greeting_msg, tc_id = make_ai_greeting_turn()
+        greeting_msg, tc_id = make_ai_greeting_turn(gen._tool_call_ids)
         gen._ai_messages.append(greeting_msg)
         gen._last_tool_call_id = tc_id
 
@@ -209,7 +209,6 @@ def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord
 
     while turn_number < gen.max_turns:
         turn_number += 1
-        cost_before = gen.client.total_cost
         ai_response = gen._get_ai_response()
 
         if not ai_response.visible_text:
@@ -229,14 +228,15 @@ def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord
             continue
         consecutive_empty = 0
 
-        ai_tokens, context_tokens = _record_ai_turn(gen, ai_response, turn_number, gen.client.total_cost - cost_before)
+        ai_cost = ai_response.usage.cost_usd if ai_response.usage else 0.0
+        ai_tokens, context_tokens = _record_ai_turn(gen, ai_response, turn_number, ai_cost)
         accumulated_tokens += ai_tokens
 
         _check_periodic_events(gen, turn_number)
 
         if gen.verbose or turn_number % 10 == 0:
             console.print(
-                f"  [dim]\u2014 progress: turn {turn_number} | {context_tokens:,}/{gen.target_tokens:,} tok | ${gen.client.total_cost:.4f}[/dim]"
+                f"  [dim]\u2014 progress: turn {turn_number} | {context_tokens:,}/{gen.target_tokens:,} tok | ${gen._total_cost_usd:.4f}[/dim]"
             )
 
         if context_tokens >= gen.target_tokens:
@@ -257,14 +257,14 @@ def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord
 def _finalize_record(gen: Any, turn_number: int, accumulated_tokens: int) -> ConversationRecord:
     """Seal the record and print the completion summary."""
     gen._record.total_tokens_estimate = accumulated_tokens
-    gen._record.total_cost_usd = gen.client.total_cost
+    gen._record.total_cost_usd = gen._total_cost_usd
     gen._record.finished_at = datetime.now(timezone.utc).isoformat()
     gen._record.ai_messages_raw = gen._ai_messages
 
     console.print("\n[bold]Conversation complete![/bold]")
     console.print(f"  Turns: {turn_number}")
     console.print(f"  Estimated tokens: {accumulated_tokens:,}")
-    console.print(f"  Total cost: ${gen.client.total_cost:.4f}")
+    console.print(f"  Total cost: ${gen._total_cost_usd:.4f}")
     return gen._record
 
 
@@ -273,9 +273,8 @@ def _do_human_turn(
 ) -> tuple[int, int, bool]:
     """Execute one human turn. Returns (turn_number, accumulated_tokens, should_break)."""
     turn_number += 1
-    cost_before = gen.client.total_cost
     human_text, human_reasoning, human_reasoning_details, human_usage = gen._get_human_response()
-    human_cost = gen.client.total_cost - cost_before
+    human_cost = human_usage.cost_usd if human_usage else 0.0
 
     if not human_text or not human_text.strip():
         human_text, human_reasoning, human_reasoning_details = _retry_empty_human(gen, max_consecutive_empty)
@@ -339,7 +338,6 @@ def _handle_resume_human_turn(
 ) -> tuple[int, int]:
     """Handle the first human turn when resuming after an AI turn."""
     turn_number += 1
-    cost_before = gen.client.total_cost
     human_text, human_reasoning, human_reasoning_details, human_usage = gen._get_human_response()
 
     if not human_text or not human_text.strip():
@@ -347,7 +345,7 @@ def _handle_resume_human_turn(
         if not human_text:
             return gen.max_turns, accumulated_tokens
 
-    human_cost = gen.client.total_cost - cost_before
+    human_cost = human_usage.cost_usd if human_usage else 0.0
     gen._add_human_turn_to_contexts(human_text, reasoning=human_reasoning, reasoning_details=human_reasoning_details)
     human_tokens = _estimate_tokens(human_text)
     accumulated_tokens += human_tokens

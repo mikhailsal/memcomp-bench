@@ -27,7 +27,8 @@ from memcomp_bench.generator_helpers import (
 )
 from memcomp_bench.openrouter_client import OpenRouterClient
 from memcomp_bench.persistence import build_resume_defaults_payload
-from memcomp_bench.prompts import build_ai_system_prompt, set_tool_call_counter
+from memcomp_bench.persistence_runtime import RunOperationLock, read_run_revision
+from memcomp_bench.prompts import build_ai_system_prompt
 
 console = Console()
 
@@ -51,12 +52,13 @@ def _do_resume(
     ai_rpm_limit_override: int | None = None,
     human_rpm_limit_override: int | None = None,
     persist_resume_defaults: bool = False,
+    run_lock: RunOperationLock | None = None,
 ) -> ConversationRecord:
     """Implementation of ConversationGenerator.resume()."""
     from memcomp_bench.generator import _UNSET
 
     jsonl_path = Path(jsonl_path)
-    metadata, turns, events = _load_resume_files(jsonl_path)
+    metadata, turns, events = _load_resume_files(jsonl_path, run_lock=run_lock)
 
     cfg = _extract_resume_config(
         metadata,
@@ -79,8 +81,6 @@ def _do_resume(
     _print_resume_header(cfg, jsonl_path, turns, target_tokens, _UNSET=_UNSET)
 
     max_tc, last_tc_id = _scan_tool_call_ids(ai_messages)
-    set_tool_call_counter(max_tc)
-
     gen = _build_resumed_generator(
         cls,
         client,
@@ -95,6 +95,7 @@ def _do_resume(
     )
     gen._record.resume_defaults = _resume_defaults_for_save(cfg, persist_resume_defaults)
     _restore_events_and_turns(gen, events, turns)
+    gen._tool_call_ids.set_counter(max_tc)
 
     return _start_resumed_loop(gen, turns, ai_messages)
 
@@ -119,7 +120,7 @@ def _start_resumed_loop(gen: Any, turns: list, ai_messages: list) -> Conversatio
     return gen._run_loop(start_turn=last_turn, start_tokens=existing_tokens)
 
 
-def _load_resume_files(jsonl_path: Path) -> tuple[dict, list, list]:
+def _load_resume_files(jsonl_path: Path, *, run_lock: RunOperationLock | None = None) -> tuple[dict, list, list]:
     """Load and validate the JSONL + raw context files for resume."""
     raw_json_path = jsonl_path.parent / f"{jsonl_path.stem}_raw_ai_context.json"
 
@@ -134,6 +135,7 @@ def _load_resume_files(jsonl_path: Path) -> tuple[dict, list, list]:
     metadata = lines[0]
     turns = [l for l in lines[1:] if l.get("type") == "turn"]
     events = [l for l in lines[1:] if l.get("type") == "event"]
+    metadata["_run_revision"] = read_run_revision(jsonl_path, run_lock=run_lock)
     return metadata, turns, events
 
 
@@ -240,7 +242,7 @@ def _build_resumed_generator(
         human_rpm_limit=cfg["human_rpm_limit"],
     )
 
-    client.total_cost = cfg["previous_cost"]
+    gen._total_cost_usd = cfg["previous_cost"]
     gen._seed_words = cfg["seed_words"]
     gen._conversation_plan = cfg["conversation_plan"]
     gen._ai_messages = ai_messages
@@ -262,6 +264,7 @@ def _build_resumed_generator(
     gen._record.language = cfg["language"]
     gen._record.companion_mode = cfg["companion_mode"]
     gen._record.started_at = metadata["started_at"]
+    gen._record.source_revision = metadata.get("_run_revision")
     return gen
 
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from memcomp_bench.generator import (
     ConversationEvent,
     ConversationRecord,
@@ -13,6 +15,12 @@ from memcomp_bench.generator import (
     load_conversation_record,
     reformat_markdown,
     save_conversation,
+)
+from memcomp_bench.persistence_runtime import (
+    ConcurrentRunOperationError,
+    RunOperationLock,
+    StaleRunRevisionError,
+    is_run_published,
 )
 
 _TOOL_CALL_TC01 = {
@@ -148,6 +156,24 @@ class TestSaveConversation:
         assert isinstance(data, list)
         assert data[0]["role"] == "system"
 
+    def test_marks_run_as_published(self, tmp_output_dir: Path):
+        jsonl_path = save_conversation(_make_record(), tmp_output_dir)
+        assert jsonl_path.with_suffix(".ready").exists()
+        assert is_run_published(jsonl_path) is True
+
+    def test_rejects_stale_resume_save(self, tmp_output_dir: Path):
+        jsonl_path = save_conversation(_make_record(), tmp_output_dir)
+
+        first = load_conversation_record(jsonl_path)
+        second = load_conversation_record(jsonl_path)
+
+        first.finished_at = "2026-01-01T00:02:00Z"
+        save_conversation(first, tmp_output_dir)
+
+        second.finished_at = "2026-01-01T00:03:00Z"
+        with pytest.raises(StaleRunRevisionError):
+            save_conversation(second, tmp_output_dir)
+
 
 # ---------------------------------------------------------------------------
 # load_conversation_record
@@ -207,6 +233,16 @@ class TestReformatMarkdown:
         reformat_markdown(jsonl_path)
         assert md_path.read_text() != "CORRUPTED"
         assert md_path.read_text() == original_md
+
+    def test_raises_when_run_is_locked(self, tmp_output_dir: Path):
+        jsonl_path = save_conversation(_make_record(), tmp_output_dir)
+        lock = RunOperationLock(jsonl_path)
+        lock.acquire()
+        try:
+            with pytest.raises(ConcurrentRunOperationError):
+                reformat_markdown(jsonl_path)
+        finally:
+            lock.release()
 
 
 # ---------------------------------------------------------------------------

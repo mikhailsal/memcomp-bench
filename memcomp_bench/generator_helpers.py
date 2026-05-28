@@ -109,9 +109,9 @@ class ConversationRecord:
     ai_messages_raw: list[dict[str, Any]] = field(default_factory=list)
     events: list[ConversationEvent] = field(default_factory=list)
     resume_defaults: dict[str, Any] | None = None
+    source_revision: str | None = None
 
 
-# Valid tool function names defined in AI_TOOLS.
 _KNOWN_TOOL_NAMES = frozenset({"write_message_to_human"})
 
 

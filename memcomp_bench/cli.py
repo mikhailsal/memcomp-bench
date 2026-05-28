@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import cast
 
 from rich.console import Console
@@ -34,6 +35,7 @@ from memcomp_bench.model_registry import (
     validate_model_enabled,
 )
 from memcomp_bench.openrouter_client import OpenRouterClient
+from memcomp_bench.persistence_runtime import lock_saved_run
 from memcomp_bench.prompts import HUMAN_PROFILES, get_human_profile
 
 console = Console()
@@ -178,7 +180,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
         if record.turns:
             console.print("[yellow]Saving partial conversation...[/yellow]")
             record.finished_at = "interrupted"
-            record.total_cost_usd = client.total_cost
+            record.total_cost_usd = generator._total_cost_usd
             save_conversation(record, OUTPUT_DIR)
     except DisabledModelError as e:
         console.print(f"\n[bold red]Error: {e}[/bold red]")
@@ -199,34 +201,39 @@ def cmd_resume(args: argparse.Namespace) -> None:
     target = args.target_tokens or TARGET_TOKENS
 
     try:
-        record = ConversationGenerator.resume(
-            client,
-            jsonl_path,
-            target_tokens=target,
-            verbose=args.verbose,
-            language_override=args.language,
-            ai_model_override=args.ai_model or None,
-            human_model_override=args.human_model or None,
-            # None = not specified (use saved); "" = clear; slug = lock to that provider
-            ai_provider_override=(
-                _UNSET
-                if args.ai_provider is None
-                else ({"only": [args.ai_provider], "allow_fallbacks": False} if args.ai_provider else None)
-            ),
-            human_provider_override=(
-                _UNSET
-                if args.human_provider is None
-                else ({"only": [args.human_provider], "allow_fallbacks": False} if args.human_provider else None)
-            ),
-            ai_temperature_override=args.ai_temperature,
-            human_temperature_override=args.human_temperature,
-            ai_max_tokens_override=args.ai_max_tokens,
-            human_max_tokens_override=args.human_max_tokens,
-            ai_rpm_limit_override=args.ai_rpm_limit,
-            human_rpm_limit_override=args.human_rpm_limit,
-            persist_resume_defaults=args.persist_resume_defaults,
-        )
-        save_conversation(record, OUTPUT_DIR)
+        with lock_saved_run(Path(jsonl_path)) as run_lock:
+            record = ConversationGenerator.resume(
+                client,
+                jsonl_path,
+                target_tokens=target,
+                verbose=args.verbose,
+                language_override=args.language,
+                ai_model_override=args.ai_model or None,
+                human_model_override=args.human_model or None,
+                # None = not specified (use saved); "" = clear; slug = lock to that provider
+                ai_provider_override=(
+                    _UNSET
+                    if args.ai_provider is None
+                    else ({"only": [args.ai_provider], "allow_fallbacks": False} if args.ai_provider else None)
+                ),
+                human_provider_override=(
+                    _UNSET
+                    if args.human_provider is None
+                    else ({"only": [args.human_provider], "allow_fallbacks": False} if args.human_provider else None)
+                ),
+                ai_temperature_override=args.ai_temperature,
+                human_temperature_override=args.human_temperature,
+                ai_max_tokens_override=args.ai_max_tokens,
+                human_max_tokens_override=args.human_max_tokens,
+                ai_rpm_limit_override=args.ai_rpm_limit,
+                human_rpm_limit_override=args.human_rpm_limit,
+                persist_resume_defaults=args.persist_resume_defaults,
+                run_lock=run_lock,
+            )
+            if OUTPUT_DIR == Path(jsonl_path).parent:
+                save_conversation(record, OUTPUT_DIR, run_lock=run_lock)
+            else:
+                save_conversation(record, OUTPUT_DIR)
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted by user.[/yellow]")
     except DisabledModelError as e:
@@ -242,7 +249,8 @@ def cmd_reformat(args: argparse.Namespace) -> None:
     """Reformat the markdown file for an existing conversation."""
     from pathlib import Path
 
-    md_path = reformat_markdown(Path(args.file))
+    with lock_saved_run(Path(args.file)) as run_lock:
+        md_path = reformat_markdown(Path(args.file), run_lock=run_lock)
     console.print(f"[bold]Reformatted:[/bold] {md_path}")
 
 

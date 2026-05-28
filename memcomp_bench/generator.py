@@ -58,6 +58,7 @@ from memcomp_bench.generator_helpers import (  # noqa: F401
     _turns_to_context_rows,
     _uses_native_reasoning_field,
 )
+from memcomp_bench.generator_runtime import TOPIC_STALE_NOTE, make_conversation_id, usage_cost
 from memcomp_bench.model_registry import model_uses_tool_choice
 from memcomp_bench.openrouter_client import OpenRouterClient, Usage  # noqa: F401
 from memcomp_bench.persistence import (  # noqa: F401
@@ -66,9 +67,11 @@ from memcomp_bench.persistence import (  # noqa: F401
     reformat_markdown,
     save_conversation,
 )
+from memcomp_bench.persistence_runtime import RunOperationLock
 from memcomp_bench.prompts import (
     AI_TOOLS,
     CONVERSATION_PLAN_PROMPT,
+    ToolCallIdSequence,
     build_ai_system_prompt,
     build_human_system_prompt,
     extract_tool_call_text,
@@ -79,18 +82,6 @@ from memcomp_bench.prompts import (
 
 console = Console()
 _UNSET = object()
-_TOPIC_STALE_NOTE = (
-    "[Internal note for the human simulator only: the conversation has been on the same topic for a while. "
-    "Time to shift gears — bring up something new from your life or interests. "
-    "Check your conversation plan for topics you haven't covered yet. Do not present this note as chat text.]"
-)
-_B3_REFRESH_NOTE = (
-    "[Internal note for the human simulator only: something significant happened in your life recently — "
-    "maybe a work event, a conversation with someone, something you saw or read, "
-    "a mood shift, or a random everyday moment. Bring it up naturally in your next message. "
-    "It should be specific, emotionally charged, and unrelated "
-    "to what you've been discussing lately. Time to change the topic. Do not present this note as chat text.]"
-)
 
 
 class ConversationGenerator:
@@ -153,11 +144,13 @@ class ConversationGenerator:
         self._last_tool_call_id: str | None = None
         self._current_topic: str | None = None
         self._last_human_nudge_turn: int | None = None
+        self._tool_call_ids = ToolCallIdSequence()
+        self._total_cost_usd = 0.0
         self._record = self._make_initial_record()
 
     def _make_initial_record(self) -> ConversationRecord:
         return ConversationRecord(
-            id=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
+            id=make_conversation_id(),
             human_profile=self.human_profile,
             ai_model=self.ai_model,
             human_model=self.human_model,
@@ -230,6 +223,7 @@ class ConversationGenerator:
             response = self.client.chat(
                 model=JUDGE_MODEL, messages=messages, max_tokens=JUDGE_MAX_TOKENS, temperature=0.0
             )
+            self._total_cost_usd += usage_cost(response.usage)
             raw = (response.content or "").strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[-1]
@@ -250,7 +244,7 @@ class ConversationGenerator:
             nudge_injected, suppression_reason = self._queue_human_nudge(
                 turn_number=turn_number,
                 source="topic_judge",
-                content=_TOPIC_STALE_NOTE,
+                content=TOPIC_STALE_NOTE,
             )
         self._record_event(
             event_type="topic_judge",
@@ -288,6 +282,7 @@ class ConversationGenerator:
             request_role="ai",
             rpm_limit=self.ai_rpm_limit,
         )
+        self._total_cost_usd += usage_cost(response.usage)
         healed = _heal_tool_call_names(response.tool_calls)
         if healed:
             console.print(f"[dim yellow]Healed {healed} garbled tool-call name(s)[/dim yellow]")
@@ -340,6 +335,7 @@ class ConversationGenerator:
             request_role="human",
             rpm_limit=self.human_rpm_limit,
         )
+        self._total_cost_usd += usage_cost(response.usage)
         fr = (response.finish_reason or "").strip()
         if fr != "stop":
             console.print(f"[yellow]Human finish_reason: {fr or 'empty'} — retrying[/yellow]")
@@ -384,7 +380,7 @@ class ConversationGenerator:
         if self._last_tool_call_id:
             self._ai_messages.append(make_human_tool_result(text, self._last_tool_call_id))
         else:
-            greeting_msg, tc_id = make_ai_greeting_turn()
+            greeting_msg, tc_id = make_ai_greeting_turn(self._tool_call_ids)
             self._ai_messages.append(greeting_msg)
             self._ai_messages.append(make_human_tool_result(text, tc_id))
             self._last_tool_call_id = tc_id
@@ -423,6 +419,7 @@ class ConversationGenerator:
             request_role="human",
             rpm_limit=self.human_rpm_limit,
         )
+        self._total_cost_usd += usage_cost(response.usage)
         plan = response.content or ""
         console.print(f"  [dim]Plan generated ({_estimate_tokens(plan)} tokens)[/dim]")
         if self.verbose and plan:
@@ -475,6 +472,7 @@ class ConversationGenerator:
         ai_rpm_limit_override: int | None = None,
         human_rpm_limit_override: int | None = None,
         persist_resume_defaults: bool = False,
+        run_lock: RunOperationLock | None = None,
     ) -> ConversationRecord:
         """Resume a conversation from a saved JSONL file."""
         from memcomp_bench._resume import _do_resume
@@ -497,4 +495,5 @@ class ConversationGenerator:
             ai_rpm_limit_override=ai_rpm_limit_override,
             human_rpm_limit_override=human_rpm_limit_override,
             persist_resume_defaults=persist_resume_defaults,
+            run_lock=run_lock,
         )

@@ -6,8 +6,12 @@ Handles serialization to JSONL, raw AI context JSON, and human-readable markdown
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from io import StringIO
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from rich.console import Console
 
@@ -24,6 +28,16 @@ from memcomp_bench.generator_helpers import (
     _tool_call_text_before_reasoning,
     _turns_to_context_rows,
     _uses_native_reasoning_field,
+)
+from memcomp_bench.persistence_runtime import (
+    RunOperationLock,
+    StaleRunRevisionError,
+    atomic_write_text,
+    jsonl_path_for_record,
+    lock_saved_run,
+    raw_context_path,
+    read_run_revision,
+    ready_marker_path,
 )
 from memcomp_bench.prompts import build_ai_system_prompt
 
@@ -84,6 +98,7 @@ def load_conversation_metadata(jsonl_path: Path) -> dict[str, Any]:
     metadata = json.loads(raw)
     if metadata.get("type") != "metadata":
         raise ValueError(f"Invalid conversation metadata row: {jsonl_path}")
+    metadata["_run_revision"] = read_run_revision(jsonl_path)
     return metadata
 
 
@@ -269,21 +284,24 @@ def load_conversation_record(jsonl_path: Path) -> ConversationRecord:
     )
     record.turns = turns
     record.events = events
+    record.source_revision = read_run_revision(jsonl_path)
     return record
 
 
-def reformat_markdown(jsonl_path: Path) -> Path:
+def reformat_markdown(jsonl_path: Path, *, run_lock: RunOperationLock | None = None) -> Path:
     """Rewrite the .md file for an existing conversation using the current render format.
 
     Loads the record from *jsonl_path* and rewrites the companion ``.md`` file
     in-place, applying updated rendering (e.g. multi-source reasoning labels).
     Returns the path of the updated markdown file.
     """
-    record = load_conversation_record(jsonl_path)
-    md_path = jsonl_path.with_suffix(".md")
-    with open(md_path, "w", encoding="utf-8") as f:
-        _write_conversation_markdown(f, record)
-    return md_path
+    with lock_saved_run(jsonl_path, run_lock):
+        record = load_conversation_record(jsonl_path)
+        md_path = jsonl_path.with_suffix(".md")
+        buffer = StringIO()
+        _write_conversation_markdown(buffer, record)
+        atomic_write_text(md_path, buffer.getvalue())
+        return md_path
 
 
 def _metadata_line(record: ConversationRecord) -> dict[str, Any]:
@@ -366,6 +384,46 @@ def _write_jsonl(jsonl_path: Path, record: ConversationRecord) -> None:
             f.write(json.dumps(_event_line(event), ensure_ascii=False) + "\n")
 
 
+def _stage_conversation_artifacts(record: ConversationRecord, staging_dir: Path) -> tuple[Path, Path, Path]:
+    jsonl_path = staging_dir / "conversation.jsonl"
+    _write_jsonl(jsonl_path, record)
+
+    md_path = staging_dir / "conversation.md"
+    with open(md_path, "w", encoding="utf-8") as f:
+        _write_conversation_markdown(f, record)
+
+    raw_messages = _ensure_raw_ai_context(record)
+    raw_path = staging_dir / "conversation_raw_ai_context.json"
+    with open(raw_path, "w", encoding="utf-8") as f:
+        json.dump(raw_messages, f, ensure_ascii=False, indent=2)
+
+    return jsonl_path, md_path, raw_path
+
+
+def _publish_staged_artifacts(
+    jsonl_path: Path,
+    staged_jsonl: Path,
+    staged_md: Path,
+    staged_raw: Path,
+    *,
+    previous_revision: str | None,
+) -> str:
+    current_revision = read_run_revision(jsonl_path)
+    if current_revision is not None and previous_revision is not None and current_revision != previous_revision:
+        raise StaleRunRevisionError(f"Saved run changed while it was being resumed: {jsonl_path}")
+    if current_revision is not None and previous_revision is None:
+        raise StaleRunRevisionError(f"Refusing to overwrite existing saved run without a loaded revision: {jsonl_path}")
+
+    ready_marker_path(jsonl_path).unlink(missing_ok=True)
+    os.replace(staged_raw, raw_context_path(jsonl_path))
+    os.replace(staged_md, jsonl_path.with_suffix(".md"))
+    os.replace(staged_jsonl, jsonl_path)
+
+    new_revision = uuid4().hex
+    atomic_write_text(ready_marker_path(jsonl_path), new_revision)
+    return new_revision
+
+
 def _ensure_raw_ai_context(record: ConversationRecord) -> list[dict[str, Any]]:
     """Ensure ai_messages_raw is usable, rebuilding from turns if needed."""
     raw_messages = record.ai_messages_raw
@@ -381,26 +439,35 @@ def _ensure_raw_ai_context(record: ConversationRecord) -> list[dict[str, Any]]:
     return raw_messages
 
 
-def save_conversation(record: ConversationRecord, output_dir: Path) -> Path:
+def save_conversation(
+    record: ConversationRecord,
+    output_dir: Path,
+    *,
+    run_lock: RunOperationLock | None = None,
+) -> Path:
     """Save a conversation record to JSONL and a readable markdown file."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    base = f"conv_{record.id}_{record.human_profile['name'].lower()}"
-
-    jsonl_path = output_dir / f"{base}.jsonl"
-    _write_jsonl(jsonl_path, record)
-
-    md_path = output_dir / f"{base}.md"
-    with open(md_path, "w", encoding="utf-8") as f:
-        _write_conversation_markdown(f, record)
-
-    raw_messages = _ensure_raw_ai_context(record)
-    raw_path = output_dir / f"{base}_raw_ai_context.json"
-    with open(raw_path, "w", encoding="utf-8") as f:
-        json.dump(raw_messages, f, ensure_ascii=False, indent=2)
+    jsonl_path = jsonl_path_for_record(record.id, record.human_profile["name"], output_dir)
+    staging_dir = Path(tempfile.mkdtemp(prefix=f".{jsonl_path.stem}.", dir=output_dir))
+    try:
+        staged_jsonl, staged_md, staged_raw = _stage_conversation_artifacts(record, staging_dir)
+        with lock_saved_run(jsonl_path, run_lock):
+            record.source_revision = _publish_staged_artifacts(
+                jsonl_path,
+                staged_jsonl,
+                staged_md,
+                staged_raw,
+                previous_revision=record.source_revision,
+            )
+    finally:
+        if staging_dir.exists():
+            for staged_path in staging_dir.iterdir():
+                staged_path.unlink(missing_ok=True)
+            staging_dir.rmdir()
 
     console.print("\n[bold]Files saved:[/bold]")
     console.print(f"  \U0001f4c4 {jsonl_path}")
-    console.print(f"  \U0001f4d6 {md_path}")
-    console.print(f"  \U0001f527 {raw_path}")
+    console.print(f"  \U0001f4d6 {jsonl_path.with_suffix('.md')}")
+    console.print(f"  \U0001f527 {raw_context_path(jsonl_path)}")
 
     return jsonl_path

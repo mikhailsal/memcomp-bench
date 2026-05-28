@@ -265,6 +265,15 @@ def test_default_target_tokens_and_format_value_helpers():
     assert prompt_module.format_value({"a": 1}) == '{"a": 1}'
 
 
+def test_default_generate_values_use_gemini_flash_lite_for_human():
+    defaults = prompt_module._default_generate_values()
+
+    assert defaults["human_model"] == "google/gemini-3.1-flash-lite"
+    assert defaults["human_provider"] == "google-direct"
+    assert defaults["human_temperature"] == 0.9
+    assert defaults["human_max_tokens"] == 180
+
+
 def test_prompt_target_tokens_uses_rounded_default(monkeypatch):
     monkeypatch.setattr("memcomp_bench.interactive.default_target_tokens", lambda current_tokens: 25_000)
     console, _ = _console()

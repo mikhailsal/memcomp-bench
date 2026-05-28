@@ -12,17 +12,18 @@ class TestModelRegistry:
         from memcomp_bench.model_registry import default_model_for, resolve_model_preset
 
         assert default_model_for("ai") == "deepseek/deepseek-v4-flash"
-        assert default_model_for("human") == "google/gemma-4-26b-a4b-it:free"
+        assert default_model_for("human") == "google/gemini-3.1-flash-lite"
 
         ai_preset = resolve_model_preset("deepseek/deepseek-v4-flash", "ai")
         assert ai_preset.provider == {"only": ["deepseek"], "allow_fallbacks": False}
         assert ai_preset.reasoning == {"effort": "minimal", "exclude": False, "enable": True}
         assert ai_preset.tool_choice is not False
 
-        human_preset = resolve_model_preset("google/gemma-4-26b-a4b-it:free", "human")
+        human_preset = resolve_model_preset("google/gemini-3.1-flash-lite", "human")
         assert human_preset.disabled is False
+        assert human_preset.provider == {"only": ["google-direct"], "allow_fallbacks": False}
         assert human_preset.temperature == 0.9
-        assert human_preset.max_tokens == 800
+        assert human_preset.max_tokens == 180
 
         hy3_preset = resolve_model_preset("tencent/hy3-preview", "ai")
         assert hy3_preset.tool_choice is False

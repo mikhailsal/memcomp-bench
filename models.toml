@@ -1,6 +1,6 @@
 [defaults]
 ai_model = "deepseek/deepseek-v4-flash"
-human_model = "google/gemma-4-26b-a4b-it:free"
+human_model = "google/gemini-3.1-flash-lite"
 
 [models."minimax/minimax-m2.7"]
 temperature = 1.1
@@ -36,6 +36,7 @@ roles.human = { temperature = 0.9, max_tokens = 800 }
 provider = "google-vertex"
 reasoning = { effort = "minimal", exclude = false, enable = true }
 roles.ai = { temperature = 1.1, max_tokens = 2048 }
+roles.human = { provider = "google-direct", temperature = 0.9, max_tokens = 180 }
 
 [models."google/gemini-3.1-flash-lite-preview"]
 provider = "auto"

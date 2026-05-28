@@ -76,7 +76,9 @@ from memcomp_bench.prompts import (
     build_human_system_prompt,
     extract_tool_call_text,
     generate_seed,
+    make_ai_bootstrap_message,
     make_ai_greeting_turn,
+    make_human_bootstrap_message,
     make_human_tool_result,
 )
 
@@ -135,10 +137,7 @@ class ConversationGenerator:
         self._conversation_plan: str = ""
         self._ai_messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._ai_system_prompt},
-            {
-                "role": "user",
-                "content": "Say hello to the human. Use write_message_to_human with a single brief greeting — one or two words.",
-            },
+            make_ai_bootstrap_message(),
         ]
         self._human_messages: list[dict[str, Any]] = []
         self._last_tool_call_id: str | None = None
@@ -434,10 +433,7 @@ class ConversationGenerator:
         )
         self._human_messages = [
             {"role": "system", "content": self._human_system_prompt},
-            {
-                "role": "user",
-                "content": "[You just opened a chat with a new AI companion. Send your first message — keep it casual and short, like you'd text a new friend. Just say hi.]",
-            },
+            make_human_bootstrap_message(self.language),
         ]
 
     def _run_loop(self, start_turn: int, start_tokens: int) -> ConversationRecord:

@@ -16,8 +16,10 @@ from memcomp_bench.prompts import (
     extract_tool_call_text,
     generate_seed,
     get_human_profile,
+    make_ai_bootstrap_message,
     make_ai_greeting_turn,
     make_ai_tool_call,
+    make_human_bootstrap_message,
     make_human_tool_result,
     next_tool_call_id,
     reset_tool_call_counter,
@@ -74,6 +76,10 @@ class TestBuildAISystemPrompt:
         p = build_ai_system_prompt(seed_words=["zzz_unknown_word"])
         assert "subtle unnamed influence" in p
 
+    def test_contains_bootstrap_guidance(self):
+        p = build_ai_system_prompt()
+        assert "SETUP MESSAGES ARE NOT HUMAN CHAT" in p
+
 
 # ---------------------------------------------------------------------------
 # get_human_profile / build_human_system_prompt
@@ -102,6 +108,7 @@ class TestHumanProfiles:
         profile = get_human_profile(0)
         prompt = build_human_system_prompt(profile, language="russian")
         assert "RUSSIAN" in prompt
+        assert "Only stop insisting if the AI clearly says it cannot or will not use russian." in prompt
 
     def test_plan_injection(self):
         profile = get_human_profile(0)
@@ -119,6 +126,20 @@ class TestHumanProfiles:
         prompt = build_human_system_prompt(alex, conversation_plan="Plan X", language="hebrew")
         assert "Plan X" in prompt
         assert "HEBREW" in prompt
+
+    def test_bootstrap_messages_are_explicit_setup(self):
+        ai_bootstrap = make_ai_bootstrap_message()
+        human_bootstrap = make_human_bootstrap_message("russian")
+
+        assert ai_bootstrap["role"] == "user"
+        assert "NOT FROM THE HUMAN" in ai_bootstrap["content"]
+        assert "SYSTEM SETUP" in ai_bootstrap["content"]
+        assert "human has not spoken yet" in ai_bootstrap["content"]
+
+        assert human_bootstrap["role"] == "user"
+        assert "NOT FROM THE AI" in human_bootstrap["content"]
+        assert "SYSTEM SETUP" in human_bootstrap["content"]
+        assert "RUSSIAN" in human_bootstrap["content"]
 
 
 # ---------------------------------------------------------------------------

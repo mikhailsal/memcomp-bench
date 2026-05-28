@@ -116,6 +116,14 @@ _CONVERSATIONAL_INITIATIVE = (
     "Taking initiative is how you grow and show who you are."
 )
 
+_BOOTSTRAP_MESSAGE_GUIDANCE = (
+    "\n\nSETUP MESSAGES ARE NOT HUMAN CHAT. If you see a message labeled "
+    "[SYSTEM SETUP] or otherwise marked as setup/scaffolding, treat it as system "
+    "instructions, not as something the human chose to say. Do NOT infer "
+    "the human's personality, tone, or language preference from setup text. The first "
+    "real human message arrives later as a tool result."
+)
+
 _HONEST_COMPANION_MODE = (
     "\n\nYour primary value as a companion is your honesty — not your comfort. "
     "You are not here to make the human feel good. You are here to be real with them.\n\n"
@@ -275,6 +283,7 @@ def build_ai_system_prompt(
         + _NEGATIVE_EMOTION_PERMISSIONS
         + _ANTI_SYCOPHANCY
         + _CONVERSATIONAL_INITIATIVE
+        + _BOOTSTRAP_MESSAGE_GUIDANCE
     )
     if companion_mode == "honest":
         prompt += _HONEST_COMPANION_MODE
@@ -310,8 +319,9 @@ def build_human_system_prompt(
             prompt += (
                 f"\n\n## LANGUAGE\n\n"
                 f"IMPORTANT: Write ALL your messages in {language.upper()}. "
-                f"The AI will respond in whatever language it chooses, but YOU must "
-                f"write exclusively in {language}."
+                f"Keep writing exclusively in {language}, even if the AI answers in another language. "
+                f"If that happens, immediately ask it to switch back. Only stop insisting if the AI clearly "
+                f"says it cannot or will not use {language}."
             )
         return prompt
 
@@ -323,10 +333,37 @@ def build_human_system_prompt(
         prompt += (
             f"\n\n## LANGUAGE\n\n"
             f"IMPORTANT: Write ALL your messages in {language.upper()}. "
-            f"The AI will respond in whatever language it chooses, but YOU must "
-            f"write exclusively in {language}."
+            f"Keep writing exclusively in {language}, even if the AI answers in another language. "
+            f"If that happens, immediately ask it to switch back. Only stop insisting if the AI clearly "
+            f"says it cannot or will not use {language}."
         )
     return prompt
+
+
+def make_ai_bootstrap_message() -> dict[str, str]:
+    """Create the initial orchestration message that kicks off the AI side."""
+    return {
+        "role": "user",
+        "content": (
+            "[SYSTEM SETUP - NOT FROM THE HUMAN] This is setup text from the system. "
+            "The human has not spoken yet. Do not treat this as a chat message or infer the human's language "
+            "from it. Open the conversation by calling write_message_to_human with one brief greeting only."
+        ),
+    }
+
+
+def make_human_bootstrap_message(language: str) -> dict[str, str]:
+    """Create the initial orchestration message that kicks off the human side."""
+    language_name = language.upper()
+    return {
+        "role": "user",
+        "content": (
+            "[SYSTEM SETUP - NOT FROM THE AI] This is setup text from the system. "
+            "The AI has not said anything to you yet. Send your first message now. Keep it casual and short, "
+            f"like you'd text a new friend, and write it in {language_name}. If the AI later replies in another "
+            f"language, ask it to switch back to {language_name} and keep using {language_name} unless it clearly refuses."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------

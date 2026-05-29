@@ -159,6 +159,7 @@ class TestGenerateLoop:
         )
         record = gen.generate()
         assert record.total_tokens_estimate > 0
+        assert record.total_tokens_estimate == record.turns[-1].ai_context_tokens
         assert record.finished_at != ""
         assert record.started_at != ""
 

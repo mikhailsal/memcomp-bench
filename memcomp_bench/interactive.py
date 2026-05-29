@@ -122,6 +122,7 @@ def scan_saved_conversations(output_dir: Path) -> list[SavedConversationSummary]
             continue
         try:
             metadata = load_conversation_metadata(jsonl_path)
+            total_tokens_estimate, total_turns = _summary_progress(jsonl_path, metadata)
         except (OSError, ValueError, json.JSONDecodeError):
             continue
         raw_context_path = jsonl_path.parent / f"{jsonl_path.stem}_raw_ai_context.json"
@@ -132,13 +133,37 @@ def scan_saved_conversations(output_dir: Path) -> list[SavedConversationSummary]
                 profile_name=metadata.get("human_profile", {}).get("name", "unknown"),
                 started_at=metadata.get("started_at", ""),
                 finished_at=metadata.get("finished_at", ""),
-                total_tokens_estimate=metadata.get("total_tokens_estimate", 0),
-                total_turns=metadata.get("total_turns", 0),
+                total_tokens_estimate=total_tokens_estimate,
+                total_turns=total_turns,
                 effective_config=build_resume_defaults_payload(metadata),
                 saved_defaults=get_saved_resume_defaults(metadata),
             )
         )
     return summaries
+
+
+def _summary_progress(jsonl_path: Path, metadata: dict[str, Any]) -> tuple[int, int]:
+    """Prefer the latest saved AI-context count when summary metadata is stale."""
+    metadata_tokens = int(metadata.get("total_tokens_estimate") or 0)
+    metadata_turns = int(metadata.get("total_turns") or 0)
+    latest_ai_context_tokens = 0
+    counted_turns = 0
+
+    with open(jsonl_path, encoding="utf-8") as f:
+        next(f, None)
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if row.get("type") != "turn":
+                continue
+            counted_turns += 1
+            ai_context_tokens = row.get("ai_context_tokens")
+            if isinstance(ai_context_tokens, int) and ai_context_tokens > 0:
+                latest_ai_context_tokens = ai_context_tokens
+
+    return max(metadata_tokens, latest_ai_context_tokens), max(metadata_turns, counted_turns)
 
 
 def sort_summaries(summaries: list[SavedConversationSummary], order: str) -> list[SavedConversationSummary]:

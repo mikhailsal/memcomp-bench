@@ -259,7 +259,8 @@ def test_default_target_tokens_and_format_value_helpers():
     assert prompt_module.default_target_tokens(120) == 5_000
     assert prompt_module.default_target_tokens(80_000) == 85_000
     assert prompt_module.default_target_tokens(21_463) == 25_000
-    assert prompt_module.default_target_tokens(22_500) == 30_000
+    assert prompt_module.default_target_tokens(22_500) == 25_000
+    assert prompt_module.default_target_tokens(23_647) == 25_000
     assert prompt_module.format_value(None) == "-"
     assert prompt_module.format_value("") == "auto"
     assert prompt_module.format_value({"a": 1}) == '{"a": 1}'

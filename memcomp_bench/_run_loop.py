@@ -256,14 +256,15 @@ def run_loop(gen: Any, start_turn: int, start_tokens: int) -> ConversationRecord
 
 def _finalize_record(gen: Any, turn_number: int, accumulated_tokens: int) -> ConversationRecord:
     """Seal the record and print the completion summary."""
-    gen._record.total_tokens_estimate = accumulated_tokens
+    latest_context_tokens = gen._record.turns[-1].ai_context_tokens if gen._record.turns else 0
+    gen._record.total_tokens_estimate = latest_context_tokens or accumulated_tokens
     gen._record.total_cost_usd = gen._total_cost_usd
     gen._record.finished_at = datetime.now(timezone.utc).isoformat()
     gen._record.ai_messages_raw = gen._ai_messages
 
     console.print("\n[bold]Conversation complete![/bold]")
     console.print(f"  Turns: {turn_number}")
-    console.print(f"  Estimated tokens: {accumulated_tokens:,}")
+    console.print(f"  Estimated tokens: {gen._record.total_tokens_estimate:,}")
     console.print(f"  Total cost: ${gen._total_cost_usd:.4f}")
     return gen._record
 
